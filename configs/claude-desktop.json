@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "dmarkoff": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://mcp.dmarkoff.com/mcp",
+        "--header",
+        "Authorization: Bearer YOUR_API_KEY"
+      ]
+    }
+  }
+}
