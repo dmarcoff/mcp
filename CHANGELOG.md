@@ -25,4 +25,3 @@
 - OAuth 2.1 support (RFC 8414, RFC 9728) — compatible with Claude.ai, ChatGPT
 - Streamable HTTP transport
 - Per-session rate limiting
-- Prometheus metrics on internal port (`:8087`)
