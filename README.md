@@ -5,7 +5,7 @@
 DMARKOFF MCP connects your DMARC monitoring data to AI assistants — Claude, ChatGPT, Cursor, Windsurf — through the [Model Context Protocol](https://modelcontextprotocol.io/). Instead of opening a dashboard and building filters, you ask a question and get an answer with real numbers behind it.
 
 **Endpoint:** `https://mcp.dmarkoff.com/mcp`  
-**Requires:** an active [DMARKOFF](https://dmarkoff.com) account and an API key from [app.dmarkoff.com/settings/api-keys](https://app.dmarkoff.com/settings/api-keys)
+**Requires:** an active [DMARKOFF](https://dmarkoff.com) account and an API key from [app.dmarkoff.com/account/mcp](https://app.dmarkoff.com/account/mcp)
 
 ---
 
@@ -211,7 +211,7 @@ DNS checks tell you SPF is failing. DMARKOFF MCP tells you which specific sender
 → Some clients need a full restart after config changes.
 
 **401 Unauthorized**  
-→ Check your API key at [app.dmarkoff.com/settings/api-keys](https://app.dmarkoff.com/settings/api-keys).
+→ Check your API key at [app.dmarkoff.com/account/mcp](https://app.dmarkoff.com/account/mcp).
 
 **"No projects found"**  
 → The API key needs access to at least one project. Log into [app.dmarkoff.com](https://app.dmarkoff.com) to verify.

@@ -1,7 +1,7 @@
 # Connecting DMARKOFF MCP to AI Assistants
 
 **MCP Endpoint:** `https://mcp.dmarkoff.com/mcp`  
-**You will need:** an API key from your DMARKOFF account — [app.dmarkoff.com/settings/api-keys](https://app.dmarkoff.com/settings/api-keys)
+**You will need:** an API key from your DMARKOFF account — [app.dmarkoff.com/account/mcp](https://app.dmarkoff.com/account/mcp)
 
 > **Prerequisite:** An active DMARKOFF account with at least one monitored project. The AI assistant queries live data from your account — domains, DMARC reports, and analytics already collected by DMARKOFF.
 
@@ -249,7 +249,7 @@ Look up the DKIM key for selector "google" on example.com
 → Some clients require a full restart after config changes.
 
 **401 Unauthorized**  
-→ Check your API key at [app.dmarkoff.com/settings/api-keys](https://app.dmarkoff.com/settings/api-keys) — make sure it's active.
+→ Check your API key at [app.dmarkoff.com/account/mcp](https://app.dmarkoff.com/account/mcp) — make sure it's active.
 
 **"No projects found"**  
 → The API key needs access to at least one project. Log into [app.dmarkoff.com](https://app.dmarkoff.com) to verify.
