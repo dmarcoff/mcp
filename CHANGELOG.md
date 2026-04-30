@@ -24,4 +24,3 @@
 - Initial release: 12 analytics tools + 4 live DNS tools
 - OAuth 2.1 support (RFC 8414, RFC 9728) — compatible with Claude.ai, ChatGPT
 - Streamable HTTP transport
-- Per-session rate limiting
