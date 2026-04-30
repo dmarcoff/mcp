@@ -219,4 +219,4 @@ DNS checks tell you SPF is failing. DMARKOFF MCP tells you which specific sender
 **OAuth errors**  
 → The Client Secret field takes your DMARKOFF API key, not your account password.
 
-**Need help?** Email [support@dmarkoff.com](mailto:support@dmarkoff.com) or [open an issue](https://github.com/dmarcoff/mcp/issues).
+**Need help?** Email [support@mail.dmarkoff.com](mailto:support@mail.dmarkoff.com) or [open an issue](https://github.com/dmarcoff/mcp/issues).

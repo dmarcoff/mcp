@@ -258,4 +258,4 @@ Look up the DKIM key for selector "google" on example.com
 → The Client Secret field takes your DMARKOFF API key, not your account password.  
 → Try disconnecting and reconnecting the integration.
 
-**Need help?** Email [support@dmarkoff.com](mailto:support@dmarkoff.com) or [open an issue](https://github.com/dmarcoff/mcp/issues).
+**Need help?** Email [support@mail.dmarkoff.com](mailto:support@mail.dmarkoff.com) or [open an issue](https://github.com/dmarcoff/mcp/issues).
