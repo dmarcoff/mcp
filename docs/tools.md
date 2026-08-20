@@ -1,6 +1,6 @@
 # DMARKOFF MCP — Tool Reference
 
-All tools are **read-only** (`readOnlyHint: true`, `idempotentHint: true`). No tool modifies or deletes data.
+Every tool is **read-only** (`readOnlyHint: true`, `idempotentHint: true`) except `add_domain`, which creates domains in a project you own. Nothing is ever updated or deleted.
 
 Default date range for analytics tools: last 14 days (`today − 14 days → yesterday`). Pass `stats_period_start` / `stats_period_end` to override.
 
@@ -253,6 +253,46 @@ Useful for detecting duplicate SPF records (multiple `v=spf1` entries cause SPF 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `domain` | string | yes | Domain name |
+
+### `generate_dmarc_record`
+
+Builds the DMARC TXT record a domain should publish. Reads what is currently in DNS and merges the requested tags into it — existing tags are preserved, nothing is silently dropped.
+
+Pass `project_id` for a domain in a DMARKOFF project: the project's reporting address is added to `rua`, which is what makes DMARKOFF receive aggregate reports for it.
+
+Returns the host to publish at (`_dmarc.<domain>`), the current record with its status (`published`, `inherited`, `none`, `lookupFailed`), and the recommended record. Nothing is published — you add the TXT record in your DNS zone, then verify with `dns_check_dmarc`.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `domain` | string | yes | Domain name |
+| `project_id` | integer | no | Adds the project's reporting address to `rua` |
+| `p` / `sp` / `np` | string | no | Policy, subdomain policy, non-existent subdomain policy: `none`, `quarantine`, `reject` |
+| `adkim` / `aspf` | string | no | Alignment: `s` (strict) or `r` (relaxed) |
+| `fo` | string | no | Failure reporting options: `0`, `1`, `d`, `s` joined by `:` |
+| `t` | string | no | RFC 9989 test mode: `y` or `n` |
+| `psd` | string | no | Public suffix domain flag: `u`, `n`, `y` |
+| `rua_emails` | string | no | Comma-separated addresses replacing the ones in the current record |
+| `transfer_ruf` | string | no | Keep the `ruf` tag of the current record: `true` or `false` |
+
+---
+
+## Onboarding tools (require API key)
+
+### `add_domain`
+
+Adds one or more domains to a project so their DMARC reports start being collected. Up to 20 per call.
+
+Requires **owner** access to the project — domains cannot be added to a project shared with you. Each non-parked domain consumes a paid domain slot on the account's plan; `parked` domains (zones that send no mail) do not.
+
+Domains that already exist are reported as skipped, invalid ones as failed, and the rest are still added.
+
+Registering the domain is only half the job: reports start flowing once the DMARC record is published. For a single domain the response carries the exact record; for several, a template plus the list of domains that already publish their own record — call `generate_dmarc_record` for each of those, since the template would drop the tags they already have.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_id` | integer | yes | Project to add the domains to |
+| `domains` | string[] | yes | 1 to 20 domain names |
+| `parked` | boolean | no | Mark as parked: no mail expected, no report processing, no paid slot |
 
 ---
 

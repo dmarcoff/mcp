@@ -96,7 +96,7 @@ Enable Developer Mode, then go to **Settings → Apps → Create App**:
 - Client Secret: your DMARKOFF API key
 - Authorization URL: `https://mcp.dmarkoff.com/oauth/authorize`
 - Token URL: `https://mcp.dmarkoff.com/oauth/token`
-- Scope: `dmarc:read`
+- Scope: leave empty — the server issues unscoped tokens
 
 ### Windsurf
 
@@ -151,6 +151,15 @@ What DMARC policy does example.com have right now?
 Look up the DKIM key for selector "google" on example.com
 ```
 
+Onboarding a new domain — the assistant registers it and hands you the exact TXT record to publish:
+
+```
+Add example.com to my project and tell me what to put in DNS
+```
+```
+We already have DMARC on example.com — add our reporting address without touching the rest of the record
+```
+
 ---
 
 ## Tools
@@ -181,8 +190,15 @@ Look up the DKIM key for selector "google" on example.com
 | `dns_check_dmarc` | Current DMARC policy from DNS |
 | `dns_check_dkim` | DKIM public key for a given selector |
 | `dns_check_txt` | All TXT records with type classification (spf, dmarc, mta-sts, bimi, other) |
+| `generate_dmarc_record` | The DMARC record a domain should publish, merged on top of whatever is already in DNS. With a project, adds your reporting address to `rua` |
 
-All tools are read-only (`readOnlyHint: true` per MCP spec). No tool can modify or delete data.
+**Onboarding** (requires API key and owner access to the project)
+
+| Tool | What it does |
+|------|-------------|
+| `add_domain` | Adds up to 20 domains to a project and returns the DMARC record to publish for them |
+
+Every tool is read-only (`readOnlyHint: true` per MCP spec) except `add_domain`. That one creates domains — it never updates or deletes anything — and each non-parked domain it adds consumes a paid domain slot on your plan.
 
 → **[Full tool reference with parameters](docs/tools.md)**
 
@@ -193,8 +209,8 @@ All tools are read-only (`readOnlyHint: true` per MCP spec). No tool can modify 
 - **API key auth** — access is scoped to your DMARKOFF account
 - **OAuth 2.1** (RFC 8414, RFC 9728) — compatible with standard MCP flows used by Claude.ai and ChatGPT
 - **Project-level isolation** — the AI only sees what your API key has access to
-- **Per-session rate limiting** — protection against accidental overuse
-- **Read-only** — all tools are annotated as read-only; no data can be modified
+- **Per-API-key rate limiting** — protection against accidental overuse
+- **Nothing is modified or deleted** — every tool is read-only except `add_domain`, which only creates domains in a project you own, and only when you ask for it
 
 ---
 

@@ -126,7 +126,7 @@ Available on Business, Enterprise, and Edu plans with Developer Mode enabled. Pl
    - **Client Secret:** your DMARKOFF API key
    - **Authorization URL:** `https://mcp.dmarkoff.com/oauth/authorize`
    - **Token URL:** `https://mcp.dmarkoff.com/oauth/token`
-   - **Scope:** `dmarc:read`
+   - **Scope:** leave empty — the server issues unscoped tokens
 4. Publish the App for your workspace
 
 ---
@@ -196,7 +196,7 @@ mcpServers:
 | OAuth Issuer | `https://mcp.dmarkoff.com` |
 | Authorize URL | `https://mcp.dmarkoff.com/oauth/authorize` |
 | Token URL | `https://mcp.dmarkoff.com/oauth/token` |
-| Scope | `dmarc:read` |
+| Scope | not used — tokens are unscoped; a key's reach is set by its project access |
 
 OAuth auto-discovery:
 - `GET https://mcp.dmarkoff.com/.well-known/oauth-authorization-server`

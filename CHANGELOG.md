@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-08-20
+
+### Added
+- `add_domain` — adds up to 20 domains to a project and returns the DMARC record to publish for them. Requires owner access to the project; each non-parked domain consumes a paid domain slot. The first tool that writes: it creates domains, never updates or deletes.
+- `generate_dmarc_record` — builds the DMARC TXT record a domain should publish, merged on top of whatever is already in DNS. With `project_id` it adds the project's reporting address to `rua`, which is what starts report collection.
+
+### Changed
+- Protocol revision `2026-07-28` is now supported alongside earlier ones. Clients that speak it negotiate up automatically; older clients are unaffected.
+- `dns_check_dmarc` reports the domain's own nameservers instead of the resolver that was queried.
+- Record lookups distinguish "no DMARC record published" from "DNS could not be checked" — previously both looked like an empty record.
+
+### Removed
+- `scopes_supported` is no longer advertised in the OAuth metadata. No scope was ever issued or enforced, and keeping the declaration would have implied a read-only mode that does not exist. A key's reach is bounded by its project access.
+
+---
+
 ## 2025-04-30
 
 ### Added
