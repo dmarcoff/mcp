@@ -317,9 +317,9 @@ A mechanism whose `spfPass` is far below its `total` is being used by a sender w
 
 ---
 
-## Live DNS tools (no account needed)
+## Live DNS tools (no project needed)
 
-These tools query DNS directly in real time. They work for any domain — including ones not in your DMARKOFF account.
+These tools query DNS directly in real time and work for any domain — including ones not in your DMARKOFF account. They still need your API key: every request to the server is authenticated. What they do not need is a monitored project or collected report data.
 
 ---
 

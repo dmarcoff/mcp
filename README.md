@@ -151,7 +151,7 @@ Our SPF record is at 10 lookups — which includes still carry mail and which ca
 Compliance on domain.com dropped last week. Did the DMARC or SPF record change?
 ```
 
-Live DNS checks — no account needed:
+Live DNS checks — these work for any domain, monitored or not:
 
 ```
 Check the SPF record for example.com — are there too many DNS lookups?
@@ -198,7 +198,7 @@ We already have DMARC on example.com — add our reporting address without touch
 | `get_smtp_rejections` | Mail throttled or rejected at SMTP time, by reason — Gmail's 421/550 codes explained |
 | `get_spf_usage` | Which SPF mechanisms actually carry mail, and which senders your record misses — for lookup-limit clean-ups |
 
-**Live DNS** (no account needed)
+**Live DNS** (API key, but no monitored project)
 
 | Tool | What it does |
 |------|-------------|
