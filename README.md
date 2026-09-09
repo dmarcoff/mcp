@@ -138,6 +138,18 @@ Are there anomalies in email traffic over the last 24 hours?
 ```
 Show me source details for domain.com grouped by ISP — only rows where SPF is failing
 ```
+```
+We publish p=reject on domain.com — why did some mail still get delivered?
+```
+```
+Gmail is throttling us on domain.com. What are they actually complaining about?
+```
+```
+Our SPF record is at 10 lookups — which includes still carry mail and which can go?
+```
+```
+Compliance on domain.com dropped last week. Did the DMARC or SPF record change?
+```
 
 Live DNS checks — no account needed:
 
@@ -168,19 +180,23 @@ We already have DMARC on example.com — add our reporting address without touch
 
 | Tool | What it does |
 |------|-------------|
-| `projects_overview` | Summary across all projects: domain counts, compliance %, severity breakdown |
+| `projects_overview` | Summary across all projects: domain counts, three compliance rates, severity breakdown |
 | `list_domains` | Filter domains by severity, search query, payment status; pagination |
-| `get_domain_full_data` | Full diagnostic: DMARC/SPF/DKIM records, stats, timeline, trends — start here |
+| `get_domain_full_data` | Full diagnostic: DMARC/SPF/DKIM records, stats, timeline, trends, and the same numbers over the previous period — start here |
 | `get_domain_stats` | Compliance percentages for a custom date range |
 | `get_domain_timeline` | Day-by-day message counts and auth results |
 | `get_domain_activity_health` | Per-day SPF/DKIM/DMARC severity vs 14-day baseline — detect when and why things changed |
-| `get_domain_senders` | Top sending sources broken down by known ESPs, unknown, forwarded |
+| `get_domain_senders` | Top sending sources broken down by known ESPs, unknown, forwarded — per provider or per sending domain |
 | `get_domain_source_details` | Per-record detail grouped by IP, ISP, hostname, or reporter with filters |
 | `get_domain_anomaly_report` | Yesterday vs 14-day baseline — flags compliance drops and volume changes |
 | `get_geo_sources` | Top 100 sending locations with compliance stats |
 | `get_domain_detail` | DMARC record text, policy, health status per dimension, errors, name servers |
 | `get_spf_records` | SPF return paths, lookup count, errors, pass/fail volume per source |
 | `get_dkim_records` | DKIM selectors, signing domains, pass/fail volume per source |
+| `get_record_history` | Past versions of a DMARC, SPF or DKIM record with what changed between checks — when did this break |
+| `get_policy_overrides` | Why receivers did not enforce your policy: ARC, forwarding, sampling, local rules |
+| `get_smtp_rejections` | Mail throttled or rejected at SMTP time, by reason — Gmail's 421/550 codes explained |
+| `get_spf_usage` | Which SPF mechanisms actually carry mail, and which senders your record misses — for lookup-limit clean-ups |
 
 **Live DNS** (no account needed)
 
@@ -217,6 +233,8 @@ Every tool is read-only (`readOnlyHint: true` per MCP spec) except `add_domain`.
 ## How this differs from other DMARC MCP tools
 
 DNS checks tell you SPF is failing. DMARKOFF MCP tells you which specific sender is causing the failure, how many messages it affected over the last two weeks, and what the fix is. That data comes from your aggregate reports — the actual traffic — not just what's published in DNS.
+
+It also answers the questions that come after: whether the problem is new (every domain report carries the previous period beside the current one), what a record looked like before someone edited it, why a receiver ignored the policy you published, and which parts of an oversized SPF record are still earning their DNS lookups.
 
 ---
 
