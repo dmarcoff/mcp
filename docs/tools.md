@@ -127,12 +127,29 @@ Day-by-day timeline: message volume, compliant/failed/forwarded/unknown counts, 
 
 ### `get_domain_anomaly_report`
 
-Compare yesterday's metrics against 14-day statistical baselines for one or more domains. Detects compliance drops, volume anomalies, and missing return-paths.
+Compare the last settled day against the 14 days before it, for one or more domains. Detects compliance drops, volume drops, days without reports, spikes in unknown senders and missing return-paths.
+
+The day evaluated is **2 days ago, in UTC**. DMARC aggregate reports arrive a day or two after the traffic they describe, so yesterday is still filling in and is not judged — reading its shortfall as a drop would flag almost every domain. The baseline is the 14 days before the evaluated one, all of them settled.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `project_id` | int | yes | Project ID |
 | `domains` | string | yes | Comma-separated domain names (e.g. `example.com` or `a.com,b.com`) |
+
+Returns, per domain:
+- `evaluatedDate`, `baselineStart`, `baselineEnd` — the day judged and the 14-day baseline before it
+- The evaluated day: `messages`, `forwardCount`, `unknownCount`, `dmarcPct`, `dkimPct`, `spfPct`
+- Baseline quantiles, over the baseline days that had reports: `messagesQ5`, `messagesQ95`, `unknownQ95`, `dmarcQ5`, `dmarcQ95`, `spfQ95`, `dkimQ95`
+- `baselineReportDays` — how many of the 14 baseline days had reports
+- `lastReportDate` — the newest report date, settled or not
+- `missingReturnPaths` — ESPs sending with their own Return-Path on the evaluated day
+
+What it flags:
+- **Volume drop** — the evaluated day is more than 20% under the baseline's 5th percentile.
+- **No reports** — the evaluated day has no reports at all. That is not counted as a drop: the mail may have stopped, or the reports never came. It is a warning (a possible reporting gap) only for a domain with reports on at least 7 of the 14 baseline days; `lastReportDate` shows whether reports have arrived since.
+- **Sparse sender** — reports on fewer than 7 of the 14 baseline days, such as weekly batches. Days without mail are normal for such a domain, so its volume is not judged and the report says so instead of flagging every quiet day.
+- **Compliance drop** — `dmarcPct` under the baseline's 5th percentile (`dmarcQ5`).
+- **Unknown senders** — `unknownCount` over the baseline's 95th percentile.
 
 ---
 
