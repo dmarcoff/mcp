@@ -127,7 +127,7 @@ Day-by-day timeline: message volume, compliant/failed/forwarded/unknown counts, 
 
 ### `get_domain_anomaly_report`
 
-Compare the last settled day against the 14 days before it, for one or more domains. Detects compliance drops, volume drops, days without reports, reports that stopped, spikes in unknown senders and missing return-paths.
+Compare the last settled day against the 14 days before it, for one or more domains. Detects compliance drops, volume drops, days without reports, reports that stopped, reports for a parked domain, spikes in unknown senders and missing return-paths.
 
 The day evaluated is **2 days ago, in UTC**. DMARC aggregate reports arrive a day or two after the traffic they describe, so yesterday is still filling in and is not judged — reading its shortfall as a drop would flag almost every domain. The baseline is the 14 days before the evaluated one, all of them settled.
 
@@ -145,6 +145,12 @@ Returns, per domain:
 - `baselineMaxGapDays` — the longest gap in days between baseline days with reports, the first counted from the day before `baselineStart` (0 with none)
 - `lastReportDate` — the newest report date, settled or not
 - `missingReturnPaths` — ESPs sending with their own Return-Path on the evaluated day
+- `parked`, `userOverride`, `dmarcStatus` — the domain's state in the project, as `list_domains` shows it. Absent for a domain the project does not hold, which is judged on its reports alone.
+
+The domain's state comes first, and the summary names it in the domain's header (`parked`, `excluded from monitoring`, `not monitored`):
+- **Parked** — the domain is not meant to send mail, so it is never judged on volume or silence: no gap, stop, sparse sender or "no baseline yet". Reports on the evaluated day, or for any day since, are a warning: **reports for a parked domain** — mail is being sent as a domain that should send none, either spoofing or a sender nobody switched off; check its sources with `get_domain_senders` and `get_domain_source_details`. DMARKOFF processes one report a day for a parked domain, so `messages` is a floor ("at least N messages"). Without them it is a note — no mail expected — that names the baseline days that had reports, if any. The compliance, unknown-sender and return-path checks of the day still apply.
+- **Excluded** (`userOverride` = `Excluded`) — DMARKOFF does not process the domain's reports, so a day without them is a note rather than a reporting gap or reports that stopped. A day with reports, from before the exclusion, is judged as usual.
+- **Not monitored** (`dmarcStatus` = `NotMonitored`) — DMARKOFF's reporting address is not in the domain's DMARC `rua`, so its reports may stop. It is judged as usual, and reports that stopped are a real warning.
 
 What it flags:
 - **Volume drop** — the evaluated day is more than 20% under the baseline's 5th percentile.
@@ -435,7 +441,7 @@ Registering the domain is only half the job: reports start flowing once the DMAR
 | `reportStatus` | Whether DMARC aggregate (rua) reports are arriving. `Receiving` = reports coming in; `NotReceiving` = no reports yet. |
 | `reportProcessingStatus` | Whether the system is actively processing reports. `Processing` / `NotProcessing`. |
 | `userOverride` | Manual override set in the UI: `Monitored`, `Excluded`, or `Invalid`. Domains with `Excluded` are hidden in `list_domains`. |
-| `parked` | Domain is inactive. High unknown sender % and low volume are expected — not actionable. |
+| `parked` | The domain is not meant to send mail: health metrics do not apply, and no reports is its normal. Mail reported for it is sent as a domain that should send none — spoofing or a forgotten sender — and is worth a look at its sources. DMARKOFF processes one report a day for a parked domain, so its volumes are a floor. |
 | `policy_override` | Override applied by the receiving mail server (from the DMARC XML report). Not the same as the user's manual override. |
 | `compliancePct` | Compliant messages over all messages — the number the DMARKOFF app shows. Forwarded mail is excluded from the numerator but stays in the denominator, so it reads lower than the raw pass rate in `get_domain_stats` when a domain has forwarding traffic. Different metrics, not a contradiction. |
 | `pctEligibleForPolicy` | The same rate over eligible messages only: compliant / (messages − forwarded). |

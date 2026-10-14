@@ -8,9 +8,12 @@
 - A day without any reports is no longer called a volume drop. The report says there were no reports for that day and when the last one arrived, and treats it as a possible reporting gap only for a domain with reports on at least half the baseline days and on both baseline days with the same weekday (`sameWeekdayReportDays`), so a domain that sends on weekdays only is not flagged every Saturday.
 - A domain whose reports stop is flagged as such: no reports for more than a week, and for longer than any gap in its baseline (`baselineMaxGapDays`), is a warning that reports may have stopped, also once so few report days are left in the baseline that the domain would read as a sparse sender. A domain with no reports in the 14 baseline days but reports on the evaluated day or later is said to have no baseline yet instead of being called a sparse sender.
 - The compliance check fired on most days for any domain whose compliance varies at all: it compared the day against the baseline's 95th percentile, which almost every ordinary day falls below. It now compares against the 5th percentile, `dmarcQ5`.
+- A parked domain — one not meant to send mail — was judged like any other. Without reports for a while it read "reports may have stopped", although no reports is exactly what a parked domain should have; with reports it was at best called a sparse sender, although a report for a parked domain means mail is being sent as a domain that should send none. `get_domain_anomaly_report` now reads the domain's state in the project: a parked domain is never judged on volume or silence, a day without reports is a note, and reports on the evaluated day or since are a warning to check its sources — spoofing or a forgotten sender. The message count it gives is a floor: DMARKOFF processes one report a day for a parked domain.
+- DMARKOFF does not process the reports of a domain excluded from monitoring, so a week after the exclusion `get_domain_anomaly_report` warned that its reports may have stopped. A day without reports is now a note for an excluded domain.
 
 ### Changed
 - A volume drop in `get_domain_anomaly_report` means more than 20% under the baseline's 5th percentile, the same margin DMARKOFF's own anomaly detection uses.
+- `get_domain_anomaly_report` returns `parked`, `userOverride` and `dmarcStatus` for every domain the project holds, and names a parked, excluded or not monitored domain in the domain's header. A domain the project holds but has no reports for no longer reads "may not belong to the specified project".
 
 ---
 
