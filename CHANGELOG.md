@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-15
+
+### Fixed
+- `get_domain_anomaly_report` judged a parked domain — one not meant to send mail — like any other. Silent for a while, it read "reports may have stopped", although no reports is what a parked domain should have; with reports, it was at best a sparse sender, although a report for a parked domain means mail is being sent as a domain that should send none. The tool now reads the domain's state in the project, and a parked domain is never judged on volume or silence. A day without reports is a note. Mail on the evaluated day is judged by its DMARC result: mail that passes is a warning, a forgotten or compromised sender to find with `get_domain_senders`; mail that all fails is spoofing, a note while the domain's DMARC policy quarantines or rejects it and a warning when the policy in effect is `none`. That DMARC result replaces the compliance, unknown-sender and return-path checks for a parked domain. The message count is a floor: DMARKOFF processes one report a day for a parked domain.
+- DMARKOFF does not process the reports of a domain excluded from monitoring, yet `get_domain_anomaly_report` judged it on them: an excluded daily sender got the "possible reporting gap" warning from its first day without reports, and "reports may have stopped" a week later. An excluded domain now gets a single note, its reports are no longer processed, and nothing is judged.
+- An unpaid domain gets at most one report a day processed, and none once it has been unpaid for more than 3 days, so its volume and its silence measured the limit, not its mail. `get_domain_anomaly_report` now says so in a note and judges neither; the compliance, unknown-sender and return-path checks of the day still apply.
+
+### Changed
+- `get_domain_anomaly_report` returns `paid`, `parked`, `userOverride` and `dmarcStatus` for every domain the project holds, with a row even for one without any report (`lastReportDate` 1970-01-01), and names the state in the domain's header: parked, excluded from monitoring, unpaid, not monitored. A domain the project holds but has no reports for no longer reads "may not belong to the specified project".
+
+---
+
 ## 2026-10-14
 
 ### Fixed
