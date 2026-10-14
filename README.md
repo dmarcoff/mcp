@@ -21,7 +21,7 @@ The AI checks return paths, finds the sending source (say, SendGrid using its ow
 
 > *"Anything unusual in email traffic compared to last week?"*
 
-The AI compares yesterday's stats against a 14-day baseline — compliance rate, unknown sender volume, message counts. The kind of check most teams skip because setting it up manually takes too long.
+The AI compares the last fully reported day against the 14 days before it — compliance rate, unknown sender volume, message counts. The kind of check most teams skip because setting it up manually takes too long.
 
 ---
 
@@ -188,7 +188,7 @@ We already have DMARC on example.com — add our reporting address without touch
 | `get_domain_activity_health` | Per-day SPF/DKIM/DMARC severity vs 14-day baseline — detect when and why things changed |
 | `get_domain_senders` | Top sending sources broken down by known ESPs, unknown, forwarded — per provider or per sending domain |
 | `get_domain_source_details` | Per-record detail grouped by IP, ISP, hostname, or reporter with filters |
-| `get_domain_anomaly_report` | Yesterday vs 14-day baseline — flags compliance drops and volume changes |
+| `get_domain_anomaly_report` | Last settled day (2 days ago, UTC) vs the 14 days before it — flags compliance drops, volume drops, days without reports and reports that stopped |
 | `get_geo_sources` | Top 100 sending locations with compliance stats |
 | `get_domain_detail` | DMARC record text, policy, health status per dimension, errors, name servers |
 | `get_spf_records` | SPF return paths, lookup count, errors, pass/fail volume per source |

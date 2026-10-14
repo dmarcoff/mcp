@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-10-14
+
+### Fixed
+- `get_domain_anomaly_report` reported an "unusual drop" on practically every domain. It judged yesterday while yesterday's reports were still arriving — DMARC aggregate reports come in a day or two after the traffic — so the day read as empty or half-full against a full baseline. It now judges the last settled day, 2 days ago in UTC, against the 14 days before it, and the response says which day that is (`evaluatedDate`) and which baseline (`baselineStart`, `baselineEnd`).
+- A domain that sends now and then — weekly batches, a few messages a month — was flagged as a drop on every day it did not send. A domain with reports on fewer than 7 of the 14 baseline days is now reported as a sparse sender and its volume is not judged; `baselineReportDays` gives the count.
+- A day without any reports is no longer called a volume drop. The report says there were no reports for that day and when the last one arrived, and treats it as a possible reporting gap only for a domain with reports on at least half the baseline days and on both baseline days with the same weekday (`sameWeekdayReportDays`), so a domain that sends on weekdays only is not flagged every Saturday.
+- A domain whose reports stop is flagged as such: no reports for more than a week, and for longer than any gap in its baseline (`baselineMaxGapDays`), is a warning that reports may have stopped, also once so few report days are left in the baseline that the domain would read as a sparse sender. A domain with no reports in the 14 baseline days but reports on the evaluated day or later is said to have no baseline yet instead of being called a sparse sender.
+- The compliance check fired on most days for any domain whose compliance varies at all: it compared the day against the baseline's 95th percentile, which almost every ordinary day falls below. It now compares against the 5th percentile, `dmarcQ5`.
+
+### Changed
+- A volume drop in `get_domain_anomaly_report` means more than 20% under the baseline's 5th percentile, the same margin DMARKOFF's own anomaly detection uses.
+
+---
+
 ## 2026-09-09
 
 ### Added
