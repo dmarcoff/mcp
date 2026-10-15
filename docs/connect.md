@@ -221,10 +221,13 @@ Check domain example.com — what's wrong with it?
 Are there any anomalies in email traffic over the last 24 hours?
 ```
 ```
-Why is SPF failing on domain.com? Which senders are the problem?
+Why is SPF failing on example.com? Which senders are the problem?
 ```
 ```
-Show me source details for domain.com grouped by ISP — only rows where SPF is failing
+Show me source details for example.com grouped by ISP — only rows where SPF is failing
+```
+```
+Can example.com move to p=reject? What's holding it?
 ```
 
 Live DNS checks (no project needed):
@@ -257,5 +260,8 @@ Look up the DKIM key for selector "google" on example.com
 **OAuth errors**  
 → The Client Secret field takes your DMARKOFF API key, not your account password.  
 → Try disconnecting and reconnecting the integration.
+
+**Can't record a decision on a sender**  
+→ Recording decisions needs owner access to the project. Reading the readiness plan works in shared projects too.
 
 **Need help?** Email [support@mail.dmarkoff.com](mailto:support@mail.dmarkoff.com) or [open an issue](https://github.com/dmarcoff/mcp/issues).

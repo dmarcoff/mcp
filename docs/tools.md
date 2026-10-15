@@ -1,6 +1,6 @@
 # DMARKOFF MCP — Tool Reference
 
-Every tool is **read-only** (`readOnlyHint: true`, `idempotentHint: true`) except `add_domain`, which creates domains in a project you own. Nothing is ever updated or deleted.
+Every tool is **read-only** (`readOnlyHint: true`, `idempotentHint: true`) except two, annotated `readOnlyHint: false` and `destructiveHint: false`. `add_domain` creates domains in a project you own. `set_source_decision` saves, changes or clears your decision on one sending source of a domain, or confirms that a source you took out stays out. No tool deletes a domain or report data, and none changes your DNS.
 
 Default date range for analytics tools: last 14 days (`today − 14 days → yesterday`). Pass `stats_period_start` / `stats_period_end` to override.
 
@@ -134,7 +134,7 @@ The day evaluated is **2 days ago, in UTC**. DMARC aggregate reports arrive a da
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `project_id` | int | yes | Project ID |
-| `domains` | string | yes | Comma-separated domain names (e.g. `example.com` or `a.com,b.com`) |
+| `domains` | string | yes | Comma-separated domain names (e.g. `example.com` or `example.com,example.net`) |
 
 Returns, per domain:
 - `evaluatedDate`, `baselineStart`, `baselineEnd` — the day judged and the 14-day baseline before it
@@ -177,11 +177,19 @@ Top sending sources broken down by source type (known/unknown/forward), with com
 | `project_id` | int | yes | Project ID |
 | `domain` | string | yes | Domain name |
 | `source_type` | string | no | Filter: `known`, `unknown`, or `forward` (default: all) |
-| `group_by` | string | no | Row identity: `provider` (default, one row per ESP/ISP) or `domain` (one row per sending domain) |
+| `group_by` | string | no | Row identity: `provider` (default, one row per ESP/ISP) or `domain` (one row per sending domain, with its place in the readiness plan) |
 | `stats_period_start` | string | no | Start date `YYYY-MM-DD` |
 | `stats_period_end` | string | no | End date `YYYY-MM-DD` |
 
 `group_by=domain` splits a provider that hosts several senders into the hostnames actually sending — a cloud whose customers each get their own hostname, or unknown traffic spread over many hosts of the same provider. Row identity is in `groupKey`; `isp`, `brandDomain`, `sender` and `ipDomainName` describe it, and `domainsCount` / `providersCount` / `ipCount` say how many distinct sending domains, providers and IPs it covers. A high `domainsCount` in provider mode is the signal to switch.
+
+With `group_by=domain`, each row is one sending source, keyed the way the readiness plan keys its sources. Its `groupKey` is the source key that `set_source_decision` takes, and the row carries four more columns:
+- `decision` — your call on the source: `ours`, `not_ours` or `ignore`; null for none.
+- `planRole` — `blocker` (holds the plan's next step), `confirmation` (unattributed, so you have to call it not yours) or `excluded` (looks like your own mail, but you took it out); null when the step does not depend on the source.
+- `verdict` — the plan's call on the source's mail: `aligned`, `needs_dkim`, `relay`, `unattributed`, `inactive` or `low_volume`. A decision never changes it.
+- `decisionPending` — true while the plan has yet to take a decision change in, usually within about a minute; null when the plan does not list the source or is not current.
+
+`planRole` and `verdict` come from the plan's own evaluation, whatever period you ask for. The header says when the plan was evaluated and whether it is still current. A row with neither is not in the plan. Rows grouped by provider carry none of these columns, because a provider row covers several sources. The table keeps the 20 largest rows of each type, so a blocker or a source to confirm can be missing from it. `get_enforcement_status` lists them all.
 
 ---
 
@@ -233,9 +241,9 @@ Each row carries `sourceReason` and `sourceReasonText` — which evidence put th
 | `no_auth_pass` | unknown | Nothing authenticated — identify the sender, then authorise it or treat it as spoofing |
 | `dmarc_not_pass` | unknown | Almost aligned: something authenticated, but not for your domain. Usually a Return-Path or selector fix |
 | `dmarc_pass_but_not_ours` | unknown | DMARC passed, but this could not be attributed to your infrastructure |
-| `relay_broke_dkim` | unknown | Probably your mail, modified by a relay — the signature no longer verifies |
+| `relay_broke_dkim` | unknown | Your DKIM signature is present but no longer verifies, after a known gateway, forwarder or mailbox provider relayed the mail or the receiver reported it as forwarded. Probably your mail changed on the way. A forgery relayed the same way looks identical, so it stays unknown |
 
-Empty on reports parsed before the classifier started recording the reason.
+`sourceReasonText` is the wording of DMARKOFF's shared source classifier, a short label followed by a description. Empty on reports parsed before the classifier started recording the reason.
 
 ---
 
@@ -256,6 +264,8 @@ Top 100 sending locations grouped by country, with compliance stats per location
 ### `get_spf_records`
 
 SPF records from your DMARC data — return paths with recent activity, record text, DNS-lookup count, errors, pass/fail volume per source. Included in `get_domain_full_data`; call this separately only when you need this slice specifically.
+
+Each record also carries `evaluation` and `permErrorScope` (see `dns_check_spf`) and `lastChecked`, when DMARKOFF last checked it. A record last checked before DMARKOFF recorded the evaluation has none, and `dns_check_spf` gives the current one.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -323,6 +333,8 @@ Stored snapshots of a record, newest first: what it looked like at each check, w
 | `selector` | string | for dkim | `dkim` only: the selector — list them with `get_dkim_records` |
 | `limit` | int | no | Snapshots to return, default 10, max 50 |
 
+SPF snapshots also carry `reason`, why DMARKOFF saved them: `record_changed`, `lookup_count_changed` or `rules_changed`. `rules_changed` means DMARKOFF's SPF checker was updated and now rates the same DNS record differently, while the record itself did not change. They carry `evaluation` and `permErrorScope` too (see `dns_check_spf`), empty on snapshots taken before DMARKOFF recorded them, and `changedFromPrevious` names `evaluation` when it changed.
+
 Use after `get_domain_activity_health` or `get_domain_timeline` showed *when* compliance dropped, to check whether a DNS change explains it. No snapshots means the record has not been checked yet or the return path / selector does not match a monitored record — not that it is absent from DNS.
 
 ---
@@ -347,6 +359,60 @@ Returns:
 
 A mechanism whose `spfPass` is far below its `total` is being used by a sender with a different HELO or MAIL FROM, or the mail is forwarded.
 
+The response also carries the record's `evaluation` and `permErrorScope` (see `dns_check_spf`). A record that receivers never evaluate (`permerror` with `permErrorScope` `record`, from a syntax error or several SPF records) fails SPF for every message. For such a record the tool returns only the volume (`totals`) and, when there are several, every record. Fix the record first. A permerror reached partway keeps the per-mechanism view, and the header names the failing term. Terms marked `ignored` are never evaluated by receivers and get no traffic.
+
+---
+
+### `get_enforcement_status`
+
+DMARKOFF's own call on whether a domain can move to its next DMARC policy (`none` → `quarantine` → `reject`), or first take `pct` off a record that has it. It returns the readiness plan behind the policy recommendation in the DMARKOFF app and the policy-upgrade email, together with your decisions on the domain's sources. Use it for "can we go to reject?" or "what holds the domain?". The tool tells the assistant to repeat the plan's verdict rather than work one out from compliance figures.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_id` | int | yes | Project ID |
+| `domain` | string | yes | Domain name (e.g. `example.com`) |
+
+Anyone with access to the project can read the plan. A viewer of a shared project sees who made each decision, without their email.
+
+`status`:
+- `current` — the plan speaks for the domain. `ready` says whether it can take `nextStep` now, and `nextRecord` is the record to publish for that step. `nextRecordTesting` is the same record with `t=y`, a variant for a cautious start. At `reject` without `pct` there is no next step, so `nextStep` is null and `ready` is false.
+- `not_current` — the last plan no longer describes the domain. `reason` is `domain_inactive`, `older_than_72h`, `policy_changed`, `step_mismatch`, `pct_mismatch` or `no_policy`. There is no verdict. `evaluatedAt`, `step` and `pct` say what the plan judged, and `domainState` what the domain is now.
+- `none` — no plan yet. DMARKOFF evaluates active domains (paid, not parked, monitored, not excluded) once a day, and `domainState` shows which of these the domain is.
+
+Every answer carries `decisions`, whatever its `status`. These are your live decisions on the domain's sources, with `sourceKey`, `provider`, `decision`, `owner`, `note`, `updatedBy`, `updatedAt`, `confirmedAt` and `pendingRecompute`. The plan takes a change in when DMARKOFF re-evaluates the domain, usually within about a minute. Against a current plan, `pendingRecompute` is true until then, and a decision you removed stays listed with `decision` null. `pendingRecompute` is null when the plan is not current or does not list the source.
+
+Fields of a current plan:
+- `evaluatedAt`, `lastDay`, `step`, `testing` — when the plan was evaluated, the last report day it read, the policy in force, and whether the record has `t=y`.
+- `readinessPct` — the share of the domain's own mail signed with aligned DKIM over the last `windowDays` days, in percent; null without own mail to judge. It shows progress. The blockers and the open confirmations decide the verdict, so one blocking source can hold the step at 99%.
+- `windowDays` — 14, or 28 when the last 14 days give no evidence (under 20 judged own messages, and no source you call ours that signs all of its mail).
+- `tenure` — `reportDays` and `daysAtPolicy` against the `requiredReportDays` and `requiredDaysAtPolicy` the step needs.
+- `blockers` — what holds the step, by `kind`:
+  - `needs_dkim` — an own source that does not sign with aligned DKIM, with its `messages`, `shareOfOwnMailPct` and `dkimAlignedPct`. Subtype `not_aligned` means part of its mail fails DMARC and would be lost at the step. `spf_only` means it aligns by SPF alone where it lacks DKIM.
+  - `tenure` — too few days of reports, or too few days at the current policy.
+  - `record` — a record with a critical error; `record` names the return path or selector.
+  - `regression` — the policy went up, or `pct` came off, and an own source is being cut.
+  - `evidence` — nothing shows the step is safe. Subtype `low_volume` means too little own mail, `no_mail` no own mail in the last 28 days.
+- `signedBy` — on a `needs_dkim` blocker and on `info.spfOnly` / `info.smallNotAligned`: who signed the source's mail without aligned DKIM, largest first, up to 5. It tells you where the fix is:
+
+  | `kind` | What it means | Where to fix it |
+  |--------|---------------|-----------------|
+  | `vendor_default` | The sending service (`service`) signed with its own default domain | Set up DKIM for your domain in that service |
+  | `platform` | Another organisation (`domain`) signed the mail as itself | Ask it to sign with your domain, or send that mail through one of your own senders |
+  | `own_other_domain` | Signed with another domain of the project | Set up DKIM for this domain at the same sender |
+  | `own_failed` | Your own signature failed | `result` `permerror` means the key at the selector is missing or broken, and `temperror` that receivers could not look it up. Any other result means the message changed after signing (a forwarder, a mailing list, a relay), which a DKIM setup at the sender does not fix |
+  | `own_passed` | Your own signature passed but did not align | Check `adkim=s` and the domain it signs with |
+  | `foreign_failed` | Only another organisation's signature, and it failed | At that sender |
+  | `unsigned` | No DKIM signature | Enable DKIM at the sender |
+
+- `confirmations` — unattributed sources you have to call not yours before the step, with `messages`, `shareOfAllMailPct` and the classifier's `topReasonText`. A domain with an open confirmation is not ready.
+- `sources` — the 50 largest sources, as a table of `sourceKey`, `provider`, `category`, `verdict`, `decision`, `messages` and `dkimAlignedPct`. `verdict` is one of `aligned`, `needs_dkim`, `relay`, `unattributed`, `inactive`, `low_volume`.
+- `excluded` — sources that look like the domain's own but were taken out (`not_ours` or `ignore`), with who decided and when.
+- `info` — findings that never block: spoofing and relay volume (`spoofMessages`, `relayMessages`), own sources that do not align SPF (`spfNotAligned`), and own sources that need DKIM but are too small to hold the step (`spfOnly`, `smallNotAligned`). These are still worth fixing, because their mail that fails DMARC is lost once the policy goes up.
+- `pct` — present only while the record has `pct` below 100 at `quarantine` or `reject`. Receivers that still read `pct` apply the policy to only that share of the mail failing DMARC. The next step then takes `pct` off at the same policy (`nextStep` equals `step`), `nextRecord` is the record without `pct` (at `reject` it also adds `np=reject` when the record has no `np`, as every step to `reject` does), and there is no `nextRecordTesting`. The plan judges the next policy only after that.
+- `regression` — the rollback watch, for 30 days after the policy went up or `pct` came off (`from`, `changedAt`, `until`). `sources` lists own sources whose mail receivers now quarantine or reject, with `cutMessages` and `cutPct`. `questions` lists sources you took out that looked like your own before the change and whose mail the new policy now cuts. A question with `confirmed` false is open. You answer it with `set_source_decision` and `confirm`, or change the decision if the source is yours after all.
+
+A decision is about who a source belongs to. Marking a source ours does not authenticate its mail, and the source stays a blocker until it signs with aligned DKIM.
+
 ---
 
 ## Live DNS tools (no project needed)
@@ -357,11 +423,20 @@ These tools query DNS directly in real time and work for any domain — includin
 
 ### `dns_check_spf`
 
-Live SPF lookup: record text, parsed include tree, DNS-lookup count (flags if over the 10-lookup limit), errors.
+Live SPF lookup: record text, what receivers evaluate it to, parsed include tree, DNS-lookup count (flags if over the 10-lookup limit), void lookups, errors.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `domain` | string | yes | Domain name (e.g. `example.com`) |
+
+Returns, besides the record and its include tree:
+- `evaluation` — what receivers' SPF check returns for the record: `ok` (pass or fail then depends on the sending IP), `none` (no record), `permerror` or `temperror`. DMARC counts a permerror as an SPF fail.
+- `permErrorScope` — on a permerror. `record` means receivers never evaluate the record (a syntax error anywhere in it, or several SPF records), so SPF fails for every message and `lookupCount` 0 means "not counted". `evaluation` means the record breaks partway (an include or redirect target without a valid SPF record, more than 10 DNS lookups, more than 2 void lookups). Senders matched before that point still pass, and every other sender gets permerror.
+- `voidLookups` — lookups of the record's mechanisms that returned no answer.
+- `records` — every SPF record at the name, when there is more than one.
+- `ignored` — on parts of the include tree that receivers never evaluate.
+
+A result other than `ok` also gets a one-line verdict ahead of the details.
 
 ---
 
@@ -396,6 +471,8 @@ Useful for detecting duplicate SPF records (multiple `v=spf1` entries cause SPF 
 |-----------|------|----------|-------------|
 | `domain` | string | yes | Domain name |
 
+---
+
 ### `generate_dmarc_record`
 
 Builds the DMARC TXT record a domain should publish. Reads what is currently in DNS and merges the requested tags into it — existing tags are preserved, nothing is silently dropped.
@@ -403,6 +480,8 @@ Builds the DMARC TXT record a domain should publish. Reads what is currently in 
 Pass `project_id` for a domain in a DMARKOFF project: the project's reporting address is added to `rua`, which is what makes DMARKOFF receive aggregate reports for it.
 
 Returns the host to publish at (`_dmarc.<domain>`), the current record with its status (`published`, `inherited`, `none`, `lookupFailed`), and the recommended record. Nothing is published — you add the TXT record in your DNS zone, then verify with `dns_check_dmarc`.
+
+Use it for onboarding and for tag changes. It keeps `pct` as it is. To move a domain to a stricter policy or to take `pct` off, publish `nextRecord` from `get_enforcement_status`, the readiness plan's record for that step.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -438,6 +517,49 @@ Registering the domain is only half the job: reports start flowing once the DMAR
 
 ---
 
+## Source decisions (require API key)
+
+### `set_source_decision`
+
+**Writes.** Records your call on one sending source of a domain, or clears it. The readiness plan (`get_enforcement_status`) counts the domain's sources by these decisions. The tool tells the assistant to use it only to save a call you made and asked it to save.
+
+Requires **owner** access to the project. The change goes through the DMARKOFF API, which checks access on every call.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_id` | int | yes | Project ID |
+| `domain` | string | yes | Domain name |
+| `source_key` | string | yes | The source's `sourceKey` in `get_enforcement_status`, or its `groupKey` in `get_domain_senders` with `group_by=domain`, exactly as listed (case- and space-sensitive, up to 255 bytes) |
+| `decision` | string | yes | `ours`, `not_ours`, `ignore`, or `clear` to remove the decision. With `confirm`, the exclusion saved on the source (`not_ours` or `ignore`) |
+| `owner` | string | no | Who runs the source on your side (e.g. `Marketing / Klaviyo`), up to 100 characters. Omit to keep the current one, pass `""` to clear it. Ignored with `clear` and `confirm` |
+| `note` | string | no | A note on the decision, up to 1000 characters. Omit to keep the current one, pass `""` to clear it. Ignored with `clear` and `confirm` |
+| `confirm_exclude_own_source` | bool | no | Set only after you confirmed taking out a source the plan judges your own (default false) |
+| `confirm` | bool | no | Confirms the exclusion already saved on the source, as your answer to a rollback-watch question, instead of changing it (default false) |
+
+Decisions:
+- `ours` — the domain's own mail. It authenticates nothing, and the source stays a blocker until it signs with aligned DKIM.
+- `not_ours` — someone else sending as the domain. This is how you answer a confirmation in the plan.
+- `ignore` — left out of the readiness count.
+- `clear` — removes the decision, so the source counts by its verdict again.
+
+Taking out a source the plan judges your own (`not_ours` or `ignore` on a source with verdict `aligned` or `needs_dkim`, or on a `needs_dkim` blocker) is not saved on the first call. The tool answers `confirmation_required` with the source's verdict, its messages and what taking it out does. It saves only when called again with `confirm_exclude_own_source` after you confirm. Taking out a blocker can make the domain read ready, and once the policy goes up, that source's mail is quarantined or rejected. The check covers the sources the domain's last plan names (its 50 largest, the excluded ones and the blockers), and a domain without a plan gets no warning.
+
+`confirm` answers the rollback watch. After the policy goes up, `get_enforcement_status` lists in `regression.questions` the sources you took out whose mail the new policy now cuts. With `confirm` and the question's decision, you confirm that the source stays out. Only the decision's `confirmedAt` changes, and DMARKOFF does not ask about the source again for this policy change. A confirm is refused when the source has no decision or a different one. Saving the same decision again without `confirm` does not answer the question.
+
+Returns:
+- `status` — `saved`, `cleared`, `confirmed`, `confirmation_required` (nothing was saved) or `not_confirmed` (an error: nothing was confirmed).
+- `decision` — the decision as saved.
+- `previous` — the decision the source had before the call, null for none.
+- `warning` — on `confirmation_required`, the source's verdict and messages behind the question. On a saved decision, DMARKOFF's warning that it takes out a source the plan judges your own.
+- `requested`, `snapshotEvaluatedAt` — on `confirmation_required`, the decision you asked for and when the plan behind the question was evaluated.
+- `next` — what happens to the plan.
+
+Each change is logged with the API key as its author. The plan takes it in when DMARKOFF re-evaluates the domain, usually within about a minute. A domain DMARKOFF does not evaluate (unpaid, parked, not monitored or excluded) takes it in only once it is evaluated again. A key that no report of the domain carries is refused.
+
+When a call times out, its outcome is unknown. Check `decisions` in `get_enforcement_status` before trying again. Repeating a `confirm` is safe, because it changes nothing but `confirmedAt`.
+
+---
+
 ## Field glossary
 
 | Field | Meaning |
@@ -455,6 +577,13 @@ Registering the domain is only half the job: reports start flowing once the DMAR
 | `sourceReason` / `sourceReasonText` | Why a source was classified known / unknown / forward — see the table under `get_domain_source_details`. |
 | `excludeFromHealth` | On SPF/DKIM records: the record was suppressed in the app. It is still listed with its own health and errors, but it does not feed the domain's severity — so a Critical record under a Healthy domain is expected, not a contradiction. |
 | `missingReturnPaths` | ESPs sending with their own Return-Path instead of your domain — causes SPF alignment failure. Fix: configure a Custom Return-Path at the ESP. |
+| `evaluation` / `permErrorScope` | On SPF records, live and stored: what receivers' SPF check returns, `ok`, `none`, `permerror` or `temperror`. `permErrorScope` `record` means the record is never evaluated and SPF fails for every message. `evaluation` means it breaks partway, and senders matched before that point still pass. |
+| `ready` / `nextStep` / `nextRecord` | In `get_enforcement_status`: whether the domain can take its next step now, the policy that step reaches (the current one when the step takes `pct` off), and the record to publish for it. |
+| `readinessPct` | The share of the domain's own mail signed with aligned DKIM over `windowDays` days. It shows progress. The blockers and confirmations decide the verdict. |
+| `verdict` | The readiness plan's call on a source's mail: `aligned` (own mail signed with aligned DKIM), `needs_dkim` (own mail that is not), `relay` (mostly forwarded or gateway mail), `unattributed` (mostly mail nobody has identified, spoofing included), `inactive` (sent in the last 28 days but not in the last 14), `low_volume` (too little own mail to judge). A decision never changes it. |
+| `planRole` | A source's place in the readiness plan: `blocker` holds the next step, `confirmation` is an unattributed source you have to call not yours, `excluded` looks like your own mail but you took it out. Null when the step does not depend on the source. |
+| `decision` | Your call on a source: `ours`, `not_ours` or `ignore`, saved with `set_source_decision`. It records who the source belongs to. Marking a source ours does not authenticate its mail. |
+| `pendingRecompute` / `decisionPending` | The plan has yet to take a decision change in. DMARKOFF re-evaluates an active domain usually within about a minute of a change. Null when the plan does not list the source or is not current. |
 
 Which SPF/DKIM records are listed at all: those the domain's health is computed from — contributing and seen in reports within the last 14 days (for SPF, records flagged as always contributing are listed regardless of activity). A return path or selector missing from the list is inactive or non-contributing; that is not evidence it is absent from DNS — check with `dns_check_spf` / `dns_check_dkim`.
 
@@ -478,6 +607,10 @@ policy published but not enforced   → get_policy_overrides
 Gmail bounces or rate limiting      → get_smtp_rejections
 "when did this change?"             → get_record_history (dmarc / spf / dkim)
 SPF over the 10-lookup limit        → get_spf_usage
+"can we go to quarantine / reject?" → get_enforcement_status
+"this sender is ours / not ours"    → set_source_decision (only on your word)
 ```
+
+Any question about a stricter policy goes to `get_enforcement_status`, and the assistant repeats its verdict. Compliance figures alone do not say whether a domain is ready.
 
 For quick DNS verification without a project: use `dns_check_spf`, `dns_check_dmarc`, `dns_check_dkim`, `dns_check_txt` directly.
