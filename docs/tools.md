@@ -69,6 +69,7 @@ Key fields:
 - `previousPeriod.changes.messagesPct` — volume change relative to the previous window. Absent when that window carried no mail; `changes.noPreviousData` says so, because there is no percentage of zero.
 - `previousPeriod.changes.compliancePctPoints` — compliance change in percentage points. Every other field of `previousPeriod` is a count to compare directly.
 - `errors[].fix` / `errors[].fixDescription` — on every DMARC, SPF and DKIM record error: the fix code and the remediation text the app shows for it.
+- `errors[].failedCheck` / `errors[].checkDescription` — the check that produced the error and what it means, as the app explains it; `checkDescription` is on the first error of each check in a list.
 
 ---
 
@@ -359,6 +360,8 @@ Returns:
 
 A mechanism whose `spfPass` is far below its `total` is being used by a sender with a different HELO or MAIL FROM, or the mail is forwarded.
 
+When the record cannot be read because the DNS lookup failed temporarily (`temperror`: a SERVFAIL, a timeout), the tool says so and returns no tree. That is not a missing record — receivers retry such mail.
+
 The response also carries the record's `evaluation` and `permErrorScope` (see `dns_check_spf`). A record that receivers never evaluate (`permerror` with `permErrorScope` `record`, from a syntax error or several SPF records) fails SPF for every message. For such a record the tool returns only the volume (`totals`) and, when there are several, every record. Fix the record first. A permerror reached partway keeps the per-mechanism view, and the header names the failing term. Terms marked `ignored` are never evaluated by receivers and get no traffic.
 
 ---
@@ -436,6 +439,8 @@ Returns, besides the record and its include tree:
 - `records` — every SPF record at the name, when there is more than one.
 - `ignored` — on parts of the include tree that receivers never evaluate.
 
+An `include:` or `redirect=` whose target is built from sender macros (Proofpoint's `include:%{ir}.%{v}.%{d}.spf.has.pphosted.com`, Valimail's `%{i}…`) counts as one DNS lookup itself; the target is a record of its own for each sending IP, and its terms count in neither `lookupCount` nor `voidLookups`. For a sender the record does not list, an Info error says when that target takes it over the 10-lookup or 2-void-lookup limit, and a Critical error with permerror when the target does not exist for it.
+
 A result other than `ok` also gets a one-line verdict ahead of the details.
 
 ---
@@ -447,6 +452,8 @@ Live DMARC lookup: record text, parsed policy (none/quarantine/reject), errors.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `domain` | string | yes | Domain name |
+
+`tempError` is true when the lookup failed at some step of the search, and `lookupFailure` names the step (`qname`, `_dmarc.<name>`) and the cause: `servfail`, `refused`, `timeout` or `error`. An empty record then means the record could not be checked — not that the domain has no DMARC.
 
 ---
 
@@ -463,7 +470,9 @@ Live DKIM key lookup for a specific selector: queries `<selector>._domainkey.<do
 
 ### `dns_check_txt`
 
-All TXT records for a domain with TTL and type classification: `spf`, `dmarc`, `mta-sts`, `tlsrpt`, `bimi`, `other`.
+All TXT records for a domain with TTL and type classification: `spf`, `spf-ignored`, `dkim`, `dmarc`, `mta-sts`, `tlsrpt`, `bimi`, `site-verification`, `acme`, `mcp-registry-auth`, `sender-id`, `other`.
+
+`spf-ignored` is a record that looks like SPF but that receivers do not read as SPF, so it is never counted as a second SPF record. Its error (`txt_spf_record_format_ok`) explains why and what to do.
 
 Useful for detecting duplicate SPF records (multiple `v=spf1` entries cause SPF to fail) or verifying a newly published record is visible.
 
@@ -475,7 +484,11 @@ Useful for detecting duplicate SPF records (multiple `v=spf1` entries cause SPF 
 
 ### `generate_dmarc_record`
 
-Builds the DMARC TXT record a domain should publish. Reads what is currently in DNS and merges the requested tags into it — existing tags are preserved, nothing is silently dropped.
+Builds the DMARC TXT record a domain should publish. Reads what is currently in DNS and merges the requested tags into it, repairing what it builds on: tags the checker accepts stay as written; an invalid `p` becomes `none`, other invalid `sp`, `np`, `adkim`, `aspf`, `t`, `psd` or `fo` values are dropped, and tags a missing `;` ran together are split again (a swallowed `p`, `sp`, `np` or `t` is not recovered).
+
+Without `p`, `sp` or `np` the record keeps the policy receivers apply now, for the domain and its subdomains. A record with an invalid `p`, `sp` or `np` is applied as `none` as a whole (RFC 9989 §4.10.1), so it comes back as `p=none` without its `sp` and `np` above none. With only `sp` or `np` passed, a valid written `p` stays — and on such a record that brings it into force: `sp=none` on `p=reject; sp=x; np=reject` gives `p=reject; sp=none; np=reject`. To change only the subdomains of such a record, pass `p`, `sp` and `np` together.
+
+When the current record cannot be read, the note names the DMARC lookup step that failed and why.
 
 Pass `project_id` for a domain in a DMARKOFF project: the project's reporting address is added to `rua`, which is what makes DMARKOFF receive aggregate reports for it.
 
@@ -574,6 +587,7 @@ When a call times out, its outcome is unknown. Check `decisions` in `get_enforce
 | `pctEligibleForPolicy` | The same rate over eligible messages only: compliant / (messages − forwarded). |
 | `dmarcFail` | Two definitions, both matching the app: in a stats summary it is `messages − compliant`, so forwarded mail counts as a failure and it stays consistent with `compliancePct`; in a timeline row it is `messages − compliant − forwarded`. The summary is therefore larger than the sum of the timeline column. For messages that actually failed the policy check, use `get_domain_stats`. |
 | `fix` / `failedCheck` / `fixDescription` | On every record error: the fix code, the check that produced it, and the remediation text the app shows for that code. |
+| `checkDescription` | What the failed check means, as the app explains it. On the first error of each `failedCheck` in a list; later errors of the same check leave it out. |
 | `sourceReason` / `sourceReasonText` | Why a source was classified known / unknown / forward — see the table under `get_domain_source_details`. |
 | `excludeFromHealth` | On SPF/DKIM records: the record was suppressed in the app. It is still listed with its own health and errors, but it does not feed the domain's severity — so a Critical record under a Healthy domain is expected, not a contradiction. |
 | `missingReturnPaths` | ESPs sending with their own Return-Path instead of your domain — causes SPF alignment failure. Fix: configure a Custom Return-Path at the ESP. |

@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-10-20
+
+### Added
+- `checkDescription` on record errors, stored and live: what the failed check means, in the words the DMARKOFF app uses, on the first error of each check. Together with `fixDescription`, every finding now carries both texts the app shows — what is wrong and what to do — from the catalogs DMARKOFF's record checker is released with.
+- `dns_check_dmarc` returns `lookupFailure` with `tempError`: the step of the DMARC search that failed (`qname`) and why — `servfail`, `refused`, `timeout` or `error`. An empty record then means the lookup could not be done, not that the domain has no DMARC.
+
+### Changed
+- `generate_dmarc_record` repairs the record it builds on instead of copying it as is. Tags the checker accepts stay as written. An invalid `p` becomes `none`; other invalid `sp`, `np`, `adkim`, `aspf`, `t`, `psd` or `fo` values are dropped; tags a missing `;` ran together are split again, except that a swallowed `p`, `sp`, `np` or `t` is not recovered.
+- Without `p`, `sp` or `np` asked for, `generate_dmarc_record` keeps the policy receivers apply now. For a record with an invalid `p`, `sp` or `np` that is `none` for the domain and its subdomains alike (RFC 9989 §4.10.1), so the record comes back as `p=none` without its `sp` and `np` above none. Passing only `sp` or `np` brings the written `p` into force; to change only the subdomains of such a record, pass `p`, `sp` and `np` together.
+- When the current record cannot be read, `generate_dmarc_record` says which DMARC lookup failed and why (`The DMARC lookup failed at _dmarc.example.com (servfail)`) instead of "DNS did not answer". A SERVFAIL or REFUSED at any step of the DMARC search is now a temporary failure: the search no longer moves on to the parent domain's policy past a step it could not read.
+- `dns_check_txt` types a record that looks like SPF but that receivers do not read as SPF — a space or quote before `v=spf1`, a TAB, line break, `;` or quote after it — as `spf-ignored`. Such a copy no longer counts as a second SPF record; its error explains it, and says the domain has no SPF in effect when no copy is read. The type list also names `dkim`, `site-verification`, `acme`, `mcp-registry-auth` and `sender-id`.
+- `dns_check_spf` evaluates an `include:` or `redirect=` whose target is built from sender macros — Proofpoint and Valimail hosted SPF — for a sender the record does not list. When that target takes the sender over the 10-lookup or 2-void-lookup limit, an Info error names the term and where receivers stop; when the target does not exist for it, a Critical error with permerror. The include counts as one DNS lookup itself; its target's terms count in neither `lookupCount` nor `voidLookups`.
+- Record findings show the non-ASCII characters of a record as characters rather than `\DDD` escapes; DKIM tag names are read case-sensitively, as receivers read them; SPF macros are expanded as RFC 7208 §7.3 specifies.
+
+### Fixed
+- `get_enforcement_status` judged a record with an invalid `sp` or `np` by the `p` it writes. Receivers apply such a record as `none` (or, with no valid `rua` left, not at all), so `step` is now `none` for it.
+- `get_spf_usage` read a temporary DNS failure — a SERVFAIL, a timeout, a lookup cut short — as a missing record, and said every message using the return path fails SPF. It now says the lookup failed temporarily, which receivers retry.
+
+---
+
 ## 2026-10-15
 
 ### Added
