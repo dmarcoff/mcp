@@ -216,8 +216,8 @@ We already have DMARC on example.com — add our reporting address without touch
 | `dns_check_spf` | Current SPF record, what receivers evaluate it to (`ok`, `permerror` and so on), parsed include tree and lookup count |
 | `dns_check_dmarc` | Current DMARC policy from DNS |
 | `dns_check_dkim` | DKIM public key for a given selector |
-| `dns_check_txt` | All TXT records with type classification (spf, dmarc, mta-sts, bimi, other) |
-| `generate_dmarc_record` | The DMARC record a domain should publish, merged on top of whatever is already in DNS. With a project, adds your reporting address to `rua` |
+| `dns_check_txt` | All TXT records with type classification — including `spf-ignored`, a record that looks like SPF but receivers do not read |
+| `generate_dmarc_record` | The DMARC record a domain should publish, merged on top of what is already in DNS and repaired where the checker rejects it, keeping the policy in force. With a project, adds your reporting address to `rua` |
 
 **Onboarding** (requires API key and owner access to the project)
 
