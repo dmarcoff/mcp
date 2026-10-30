@@ -95,12 +95,9 @@ Or edit `~/.cursor/mcp.json`:
 Enable Developer Mode, then go to **Settings → Apps → Create App**:
 
 - MCP Server URL: `https://mcp.dmarkoff.com/mcp`
-- Auth type: OAuth
-- Client ID: `chatgpt`
-- Client Secret: your DMARKOFF API key
-- Authorization URL: `https://mcp.dmarkoff.com/oauth/authorize`
-- Token URL: `https://mcp.dmarkoff.com/oauth/token`
-- Scope: leave empty — the server issues unscoped tokens
+- Authentication: OAuth, without a client ID or secret
+
+ChatGPT registers its own OAuth client with the server, then opens a DMARKOFF page where you paste your API key.
 
 ### Windsurf
 
@@ -276,7 +273,8 @@ When you want to tighten the policy, it reads DMARKOFF's own verdict on whether 
 → The API key needs access to at least one project. Log into [app.dmarkoff.com](https://app.dmarkoff.com) to verify.
 
 **OAuth errors**  
-→ The Client Secret field takes your DMARKOFF API key, not your account password.
+→ The Client Secret field takes your DMARKOFF API key, not your account password.  
+→ ChatGPT says `redirect_uri not allowed`: ChatGPT keeps the OAuth client it registered when the app was created, and that client lacks the callback address ChatGPT uses now. Delete the app and create it again.
 
 **Can't record a decision on a sender**  
 → Recording decisions needs owner access to the project, or a shared project whose owner lets you manage sources. Reading the readiness plan works in shared projects too.

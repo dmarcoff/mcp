@@ -121,13 +121,9 @@ Available on Business, Enterprise, and Edu plans with Developer Mode enabled. Pl
 2. Go to **Settings → Apps → Create App**
 3. Set the connection parameters:
    - **MCP Server URL:** `https://mcp.dmarkoff.com/mcp`
-   - **Auth type:** OAuth
-   - **Client ID:** `chatgpt`
-   - **Client Secret:** your DMARKOFF API key
-   - **Authorization URL:** `https://mcp.dmarkoff.com/oauth/authorize`
-   - **Token URL:** `https://mcp.dmarkoff.com/oauth/token`
-   - **Scope:** leave empty — the server issues unscoped tokens
-4. Publish the App for your workspace
+   - **Authentication:** OAuth, without a client ID or secret. ChatGPT registers its own OAuth client with the server (dynamic client registration, RFC 7591).
+4. Connect: ChatGPT opens a DMARKOFF page where you paste your API key
+5. Publish the App for your workspace
 
 ---
 
@@ -259,6 +255,7 @@ Look up the DKIM key for selector "google" on example.com
 
 **OAuth errors**  
 → The Client Secret field takes your DMARKOFF API key, not your account password.  
+→ ChatGPT says `redirect_uri not allowed`: ChatGPT keeps the OAuth client it registered when the app was created, and that client lacks the callback address ChatGPT uses now. Delete the app and create it again.  
 → Try disconnecting and reconnecting the integration.
 
 **Can't record a decision on a sender**  
