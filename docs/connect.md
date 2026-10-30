@@ -3,7 +3,7 @@
 **MCP Endpoint:** `https://mcp.dmarkoff.com/mcp`  
 **You will need:** an API key from your DMARKOFF account — [app.dmarkoff.com/account/mcp](https://app.dmarkoff.com/account/mcp)
 
-> **Prerequisite:** An active DMARKOFF account with at least one monitored project. The AI assistant queries live data from your account — domains, DMARC reports, and analytics already collected by DMARKOFF.
+> **Prerequisite:** An active DMARKOFF account with at least one project — projects are created in the web app, not through MCP. The AI assistant queries live data from your account — domains, DMARC reports, and analytics already collected by DMARKOFF — and can add domains to a project you own.
 
 ---
 
@@ -262,6 +262,6 @@ Look up the DKIM key for selector "google" on example.com
 → Try disconnecting and reconnecting the integration.
 
 **Can't record a decision on a sender**  
-→ Recording decisions needs owner access to the project. Reading the readiness plan works in shared projects too.
+→ Recording decisions needs owner access to the project, or a shared project whose owner lets you manage sources. Reading the readiness plan works in shared projects too.
 
 **Need help?** Email [support@mail.dmarkoff.com](mailto:support@mail.dmarkoff.com) or [open an issue](https://github.com/dmarcoff/mcp/issues).

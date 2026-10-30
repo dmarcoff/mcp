@@ -3,7 +3,7 @@
   "name": "com.dmarkoff/mcp",
   "title": "DMARKOFF — DMARC, SPF & DKIM Analytics",
   "description": "DMARC analytics for AI assistants: SPF/DKIM, compliance, anomalies, p=reject readiness, onboarding.",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "icons": [
     {
       "src": "https://assets.dmarkoff.com/images/dmarkoff_emblem.png",

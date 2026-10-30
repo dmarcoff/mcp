@@ -155,6 +155,9 @@ Our SPF record is at 10 lookups — which includes still carry mail and which ca
 Compliance on example.com dropped last week. Did the DMARC or SPF record change?
 ```
 ```
+Yesterday's Google report for example.com is missing. Is it late, or is something wrong?
+```
+```
 Can example.com move to p=reject? What's holding it?
 ```
 ```
@@ -181,6 +184,9 @@ Add example.com to my project and tell me what to put in DNS
 ```
 We already have DMARC on example.com — add our reporting address without touching the rest of the record
 ```
+```
+I published the record for example.com. Will its reports reach my project?
+```
 
 ---
 
@@ -197,7 +203,7 @@ We already have DMARC on example.com — add our reporting address without touch
 | `get_domain_timeline` | Day-by-day message counts and auth results |
 | `get_domain_activity_health` | Per-day SPF/DKIM/DMARC severity vs 14-day baseline — detect when and why things changed |
 | `get_domain_senders` | Top sending sources broken down by known ESPs, unknown, forwarded — per provider or per sending domain, with each sending domain's place in the readiness plan |
-| `get_domain_source_details` | Per-record detail grouped by IP, ISP, hostname, or reporter with filters |
+| `get_domain_source_details` | Per-record detail grouped by IP, ISP, hostname, reporter or individual report, with filters — and how long each reporter takes to send its reports |
 | `get_domain_anomaly_report` | Last settled day (2 days ago, UTC) vs the 14 days before it — flags compliance drops, volume drops, days without reports, reports that stopped and mail sent as a parked domain; excluded and unpaid domains are not judged on volume |
 | `get_geo_sources` | Top 100 sending locations with compliance stats |
 | `get_domain_detail` | DMARC record text, policy, health status per dimension, errors, name servers |
@@ -214,18 +220,18 @@ We already have DMARC on example.com — add our reporting address without touch
 | Tool | What it does |
 |------|-------------|
 | `dns_check_spf` | Current SPF record, what receivers evaluate it to (`ok`, `permerror` and so on), parsed include tree and lookup count |
-| `dns_check_dmarc` | Current DMARC policy from DNS |
+| `dns_check_dmarc` | Current DMARC policy from DNS. With a project, whether the record sends reports to it |
 | `dns_check_dkim` | DKIM public key for a given selector |
 | `dns_check_txt` | All TXT records with type classification — including `spf-ignored`, a record that looks like SPF but receivers do not read |
-| `generate_dmarc_record` | The DMARC record a domain should publish, merged on top of what is already in DNS and repaired where the checker rejects it, keeping the policy in force. With a project, adds your reporting address to `rua` |
+| `generate_dmarc_record` | The DMARC record a domain should publish, merged on top of what is already in DNS and repaired where the checker rejects it, keeping the policy in force, with a list of what changes. With a project, adds your reporting address to `rua` |
 
 **Onboarding** (requires API key and owner access to the project)
 
 | Tool | What it does |
 |------|-------------|
-| `add_domain` | Adds up to 20 domains to a project and returns the DMARC record to publish for them |
+| `add_domain` | Adds up to 20 domains to a project and returns the DMARC record to publish for each. Safe to repeat: it says where a domain already is |
 
-**Source decisions** (requires API key and owner access to the project)
+**Source decisions** (requires API key and owner access to the project, or a shared project whose owner lets you manage sources)
 
 | Tool | What it does |
 |------|-------------|
@@ -243,7 +249,7 @@ Every tool is read-only (`readOnlyHint: true` per MCP spec) except two. `add_dom
 - **OAuth 2.1** (RFC 8414, RFC 9728) — compatible with standard MCP flows used by Claude.ai and ChatGPT
 - **Project-level isolation** — the AI only sees what your API key has access to
 - **Per-API-key rate limiting** — protection against accidental overuse
-- **Two tools write** — `add_domain` creates domains in a project you own. `set_source_decision` records your decision on a sending source in a project you own. Its description tells the assistant to use it only at your request, and the server does not take out a source the plan counts among your own senders until you confirm. Every other tool is read-only. No tool deletes domains or report data, and none changes your DNS
+- **Two tools write** — `add_domain` creates domains in a project you own. `set_source_decision` records your decision on a sending source in a project you own, or one shared with you to manage sources. Its description tells the assistant to use it only at your request, and the server does not take out a source the plan counts among your own senders until you confirm. Every other tool is read-only. No tool deletes domains or report data, and none changes your DNS
 
 ---
 
@@ -273,6 +279,6 @@ When you want to tighten the policy, it reads DMARKOFF's own verdict on whether 
 → The Client Secret field takes your DMARKOFF API key, not your account password.
 
 **Can't record a decision on a sender**  
-→ Recording decisions needs owner access to the project. Reading the readiness plan works in shared projects too.
+→ Recording decisions needs owner access to the project, or a shared project whose owner lets you manage sources. Reading the readiness plan works in shared projects too.
 
 **Need help?** Email [support@mail.dmarkoff.com](mailto:support@mail.dmarkoff.com) or [open an issue](https://github.com/dmarcoff/mcp/issues).

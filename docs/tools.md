@@ -2,7 +2,11 @@
 
 Every tool is **read-only** (`readOnlyHint: true`, `idempotentHint: true`) except two, annotated `readOnlyHint: false` and `destructiveHint: false`. `add_domain` creates domains in a project you own. `set_source_decision` saves, changes or clears your decision on one sending source of a domain, or confirms that a source you took out stays out. No tool deletes a domain or report data, and none changes your DNS.
 
-Default date range for analytics tools: last 14 days (`today − 14 days → yesterday`). Pass `stats_period_start` / `stats_period_end` to override.
+Default period for analytics tools (`projects_overview` has its own, below): the 15 days ending today (`today − 14 days → today`, UTC, both ends inclusive). Pass `stats_period_start` / `stats_period_end` to override: a start equal to the end reads that one day, a missing start is 14 days before the end, and an end after today reads up to today. A date that does not parse, or a start after the end, is an error. Every answer of a tool that takes a period carries `period` (`start`, `end`, `days`, and `endClamped` when the end asked for was after today). A report is filed under the UTC day its window begins, and reports arrive a day or two after the mail, so the newest days of any period are still filling.
+
+Per-domain tools that take a period also return `coverage`: `firstReport` and `lastReport`, the span of days the project has reports for the domain (reports are kept 18 months), or `noReports`. A header note says when the period starts before the first report (DMARKOFF did not see the domain then), runs past the last one (reports stopped, or no mail was sent), or includes days whose reports are still arriving (their zeros are not days without mail).
+
+Tools that read or add a project's domains take the name lower-case and without a trailing dot.
 
 ---
 
@@ -14,22 +18,29 @@ Default date range for analytics tools: last 14 days (`today − 14 days → yes
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `stats_period_start` | string | no | Start date `YYYY-MM-DD` (default: 14 days ago) |
-| `stats_period_end` | string | no | End date `YYYY-MM-DD` (default: yesterday) |
+| `stats_period_start` | string | no | Start date `YYYY-MM-DD` (default: 14 days before `stats_period_end`, or 14 days ago) |
+| `stats_period_end` | string | no | End date `YYYY-MM-DD`, inclusive (default: messages and compliance end 2 days ago, `missedReports` yesterday) |
 | `page` | int | no | Page number, default 1 |
 | `limit` | int | no | Items per page, default 20, max 100 |
 
-Returns per-project: domain count, severity breakdown (Critical/Warning/Healthy/Unknown counts), DMARC policy distribution (none/quarantine/reject/missing) and three compliance rates:
+The answer carries `period` and `missedReportsPeriod`, the days read for messages and compliance and for `missedReports`: one period when `stats_period_end` is given. Each call reads the key's projects anew (at most every 10 seconds per key), so a project just created or shared in the web app shows up.
+
+Returns per-project: domain count, severity breakdown (Critical/Warning/Healthy/Unknown counts), DMARC policy distribution (none/quarantine/reject/missing), `dmarcAREmail` and, when set, `monitoringEmail` — an MSP mailbox published in `rua` instead, which forwards the reports to DMARKOFF — and three compliance rates:
 
 - `compliancePct` — compliant messages over all messages. Forwarded mail is excluded from the numerator but stays in the denominator, so this is the conservative floor the DMARKOFF app shows.
-- `compliancePctNoForwards` — the same over the mail a DMARC policy can actually act on (forwarded mail dropped from both sides).
-- `complianceKnownPct` — the same over known sources only: the health of your own sending infrastructure, unaffected by spoofing attempts. Quote this one when the question is "is our mail set up correctly".
+- `compliancePctNoForwards` — the same over the mail a DMARC policy can actually act on (forwarded mail dropped from both sides). Quote this one when the question is "is our mail set up correctly", and read the `sourceReason` of the unknown rows in `get_domain_source_details` for why mail failed.
+- `complianceKnownPct` — the same over known sources only: the DMARC compliance of known-source mail. Mail is classified known only when it passes DMARC (on reports parsed since December 2025), so this reads 100 whenever the period has known mail; your own mail that fails DMARC is classified unknown. It is no measure of your own senders.
+
+Also per project:
+- `noReports`, `noEligibleMail`, `noKnownMail` — no report in the period, all of its mail forwarded, or none of it from known sources: the rates affected are 0 by convention, not a measured 0%.
+- `missedReports` — reports DMARKOFF dropped on arrival, per reason: `unpaid_domain`, `excluded`, `parked`, `auto_add_disabled` (a domain the project did not hold while adding domains from reports was off). Counted on the UTC day a report arrived, by the domain's state then.
+- `nextStep` — on a project without domains: add them with `add_domain` and publish the record it returns (in a shared project, only its owner can).
 
 ---
 
 ### `list_domains`
 
-List domains in a project with filtering and pagination. Returns per-domain health status, DMARC policy, and user override.
+List domains in a project with filtering and pagination. Returns per-domain health status, DMARC policy, `dmarcStatus`, `reportStatus` and user override; no message counts or compliance rates. Excluded domains are not listed. An empty page says why in its header: the project has no domains yet (the next step is `add_domain`), no domain matches the filters, or every domain is excluded.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -38,6 +49,7 @@ List domains in a project with filtering and pagination. Returns per-domain heal
 | `query` | string | no | Search by domain name |
 | `paid` | bool | no | `true` = paid only, `false` = unpaid only, omit = all |
 | `page` | int | no | Page number, default 1 |
+| `limit` | int | no | Items per page, default 20, max 100 |
 
 ---
 
@@ -49,24 +61,29 @@ List domains in a project with filtering and pagination. Returns per-domain heal
 |-----------|------|----------|-------------|
 | `project_id` | int | yes | Project ID |
 | `domain` | string | yes | Domain name (e.g. `example.com`) |
-| `stats_period_start` | string | no | Start date `YYYY-MM-DD` (default: 14 days ago) |
-| `stats_period_end` | string | no | End date `YYYY-MM-DD` (default: yesterday) |
+| `stats_period_start` | string | no | Start date `YYYY-MM-DD` (default: 14 days before the end) |
+| `stats_period_end` | string | no | End date `YYYY-MM-DD`, inclusive (default: today) |
 
 Returns:
+- `period` and `coverage` (see the top of this page)
 - Base info: severity, DMARC status, policy, report status, user override
 - Health status per dimension: DMARC record, SPF record, DKIM record, SPF alignment, DKIM alignment, DMARC compliance, message volume
 - Stats summary: compliance %, source counts, fail counts
-- SPF records: return paths, record text, lookup count, errors, pass/fail volume per source
-- DKIM records: selectors, signing domains, record text, errors, pass/fail volume
-- Daily timeline: per-day volume and compliance breakdown
-- Statistical quantiles (5th, 90th, 95th percentile) for volume and failure rates — use as anomaly baselines
+- SPF records: return paths, record text, lookup count, errors, pass/fail volume over the period
+- DKIM records: selectors, signing domains, record text, errors, pass/fail volume over the period. A key's `total` counts every message carrying that signature, wherever it sits among the message's signatures
+- Daily timeline: per-day volume and compliance breakdown. Over 60 days, each entry is a bucket of ceil(days/60) days. Days without mail and an entry dated today are left out
+- Statistical quantiles (5th, 90th, 95th percentile) of the daily volume, unknown, dmarcFail, dkimFail and spfFail counts — use as anomaly baselines. They count every day of the period, a day without reports as 0, yesterday and today included; for a settled baseline, end the period two days before today
 - `previousPeriod`: the same headline numbers over the window before this one — the same number of days, ending the day before it starts
+- `monitoring` — only for a domain that is NotMonitored, Pending, excluded or unpaid: `status`, `expectedAddress` (what `rua` must carry), `recordHealthAsOf` (the day DMARKOFF last read the DMARC record) and a `note` with the cause and the fix in the web app ("Reinitiate monitoring", "Convert to paid" or "Include in monitoring"). Record health of such a domain is not current, so a Healthy severity does not mean it is fine.
+
+A domain the project does not hold is refused with `domain not found`.
 
 Key fields:
 - `compliancePct` — compliant messages over all messages, the number the DMARKOFF app shows. Forwarded mail is excluded from the numerator but not from the denominator, so this reads lower than the raw pass rate in `get_domain_stats` whenever a domain has forwarding traffic. Different metrics, not a contradiction.
-- `pctEligibleForPolicy` — the same rate over eligible messages only: compliant / (messages − forwarded). E.g. 99.66 means 99.66% of non-forwarded mail passes DMARC.
-- `pctFromKnownSources` — % of messages from recognized sending sources
+- `pctEligibleForPolicy` — the same rate over eligible messages only: compliant / (messages − forwarded). E.g. 99.66 means 99.66% of non-forwarded mail passes DMARC. When all of the period's mail was forwarded it is 0 by convention, and `noEligibleMail` is true (`previousPeriod.noEligibleMail` for that window).
+- `pctFromKnownSources` — not the share of mail from known sources: the DMARC compliance of known-source mail, forwarded mail left out (`complianceKnownPct` of `projects_overview`, for one domain). It reads 100 whenever the period has known mail, so it is no measure of your own senders.
 - `previousPeriod.changes.messagesPct` — volume change relative to the previous window. Absent when that window carried no mail; `changes.noPreviousData` says so, because there is no percentage of zero.
+- `previousPeriod.changes.beforeFirstReport` / `partlyBeforeFirstReport` — the comparison window ends before `coverage.firstReport`, or starts before it: there is nothing, or only part of the window, to compare with, so `messagesPct` is not growth.
 - `previousPeriod.changes.compliancePctPoints` — compliance change in percentage points. Every other field of `previousPeriod` is a count to compare directly.
 - `errors[].fix` / `errors[].fixDescription` — on every DMARC, SPF and DKIM record error: the fix code and the remediation text the app shows for it.
 - `errors[].failedCheck` / `errors[].checkDescription` — the check that produced the error and what it means, as the app explains it; `checkDescription` is on the first error of each check in a list.
@@ -75,7 +92,7 @@ Key fields:
 
 ### `get_domain_detail`
 
-Lightweight domain info: DMARC record text, policy, health status per dimension, DNS errors, name servers, monitoring status. Does NOT include SPF/DKIM records, timeline, or stats.
+Lightweight domain info: DMARC record text, policy, health status per dimension, DNS errors, name servers, monitoring status. Does NOT include SPF/DKIM records, timeline, or stats. For a domain that is NotMonitored, Pending, excluded or unpaid it carries the same `monitoring` block as `get_domain_full_data`. A domain the project does not hold is refused with `domain not found`.
 
 Use when you only need to check DMARC configuration without full analytics.
 
@@ -88,7 +105,7 @@ Use when you only need to check DMARC configuration without full analytics.
 
 ### `get_domain_activity_health`
 
-Daily activity health for the last N days — per-day breakdown of SPF alignment, DKIM alignment, DMARC compliance, and message volume severity. Each metric includes a quantile (0–1 scale vs 14-day rolling baseline) and actual value.
+DMARKOFF's daily check of SPF alignment, DKIM alignment, DMARC compliance and message volume, the last N checks. Each entry is one check: `date` is the UTC day it ran, and its figures are those of the report day before, as of the check — reports that arrive later are not in it, and the entry is never updated. Each metric has a `severity`, a `value` and a `quantile`: the baseline the check compared `value` with, in `value`'s units (not a 0–1 rank) — a percentile of the same daily figure over the report days from 14 to 2 days before the check. For SPF, DKIM and DMARC that is the 95th percentile of the daily percent. For volume, `direction` says which: `up` the 95th percentile of the daily counts, `down` and `none` (no message reported for the day) the 5th.
 
 Use after `get_domain_full_data` to understand *when* and *why* severity changed.
 
@@ -96,33 +113,33 @@ Use after `get_domain_full_data` to understand *when* and *why* severity changed
 |-----------|------|----------|-------------|
 | `project_id` | int | yes | Project ID |
 | `domain` | string | yes | Domain name |
-| `days` | int | no | Number of days (default: 7, max: 30) |
+| `days` | int | no | Number of checks (default: 7, max: 30) |
 
 ---
 
 ### `get_domain_stats`
 
-DMARC compliance statistics for a period: totals, SPF/DKIM/DMARC pass/fail counts, compliance %.
+DMARC compliance statistics for a period: totals, SPF/DKIM/DMARC pass/fail counts, compliance %. The answer is `{period, coverage, stats}`. `compliantPct` here is the raw DMARC pass rate of the report records, forwarded mail that passed included, so it reads higher than `compliancePct` for a domain with forwarding.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `project_id` | int | yes | Project ID |
 | `domain` | string | yes | Domain name |
-| `stats_period_start` | string | no | Start date `YYYY-MM-DD` (default: 14 days ago) |
-| `stats_period_end` | string | no | End date `YYYY-MM-DD` (default: yesterday) |
+| `stats_period_start` | string | no | Start date `YYYY-MM-DD` (default: 14 days before the end) |
+| `stats_period_end` | string | no | End date `YYYY-MM-DD`, inclusive (default: today) |
 
 ---
 
 ### `get_domain_timeline`
 
-Day-by-day timeline: message volume, compliant/failed/forwarded/unknown counts, statistical quantiles.
+Day-by-day timeline: message volume, compliant/failed/forwarded/unknown counts. Every day of the period has an entry, zeros for a day without reports; yesterday's and today's counts can still rise.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `project_id` | int | yes | Project ID |
 | `domain` | string | yes | Domain name |
-| `stats_period_start` | string | no | Start date `YYYY-MM-DD` (default: 14 days ago) |
-| `stats_period_end` | string | no | End date `YYYY-MM-DD` (default: yesterday) |
+| `stats_period_start` | string | no | Start date `YYYY-MM-DD` (default: 14 days before the end) |
+| `stats_period_end` | string | no | End date `YYYY-MM-DD`, inclusive (default: today) |
 
 ---
 
@@ -143,8 +160,9 @@ Returns, per domain:
 - Baseline quantiles, over the baseline days that had reports: `messagesQ5`, `messagesQ95`, `unknownQ95`, `dmarcQ5`, `dmarcQ95`, `spfQ95`, `dkimQ95`
 - `baselineReportDays` — how many of the 14 baseline days had reports
 - `sameWeekdayReportDays` — how many of the 2 baseline days with the evaluated day's weekday had reports
-- `baselineMaxGapDays` — the longest gap in days between baseline days with reports, the first counted from the day before `baselineStart` (0 with none)
-- `lastReportDate` — the newest report date, settled or not
+- `baselineMaxGapDays` — the longest gap in days between baseline days with reports, the first counted from the day before `baselineStart`, or from the day before `firstReportDate` when that is later (0 with none)
+- `totalMessages`, `totalForward`, `totalUnknown` — totals over the baseline
+- `lastReportDate` — the newest report date, settled or not; `firstReportDate` — the oldest one the project holds (1970-01-01 with none)
 - `missingReturnPaths` — ESPs sending with their own Return-Path on the evaluated day
 - `paid`, `parked`, `userOverride`, `dmarcStatus` — the domain's state in the project, as `list_domains` shows it. Absent for a domain the project does not hold, which is judged on its reports alone. Every domain the project holds has a row, also without any report (`lastReportDate` 1970-01-01).
 
@@ -155,17 +173,18 @@ The domain's state comes first, and the summary names it in the domain's header 
 
   Reports only after the evaluated day are a note: those days are not settled, the row holds no DMARC result for them, and each is judged once it is the evaluated day. Without any, it is a note — no mail expected — that names the baseline days that had reports, if any.
 - **Excluded** (`userOverride` = `Excluded`) — DMARKOFF no longer processes the domain's reports. A single note, and nothing is judged, on a day with reports too.
-- **Unpaid** (`paid` = false, not parked or excluded) — DMARKOFF processes at most one report a day for it, and none once it has been unpaid for more than 3 days. A note says so, and volume and silence are not judged; the compliance, unknown-sender and return-path checks of the day apply.
-- **Not monitored** (`dmarcStatus` = `NotMonitored`) — DMARKOFF's reporting address was not in the domain's DMARC `rua` at the last check, so its reports may stop. It is judged as usual, and reports that stopped are a real warning.
+- **Unpaid** (`paid` = false, not parked or excluded) — DMARKOFF processes at most one report a day for it for 3 days after it became unpaid (or was added unpaid), then none. A note says so, and volume and silence are not judged; the compliance, unknown-sender and return-path checks of the day apply.
+- **Not monitored** (`dmarcStatus` = `NotMonitored`) — the project's address (its `monitoringEmail` when set, DMARKOFF's reporting address otherwise) was not in the domain's DMARC `rua` at the last check, so its reports may stop. It is judged as usual, and reports that stopped are a real warning.
 
 What it flags:
 - **Volume drop** — the evaluated day is more than 20% under the baseline's 5th percentile.
-- **No reports** — the evaluated day has no reports at all. That is not counted as a drop: the mail may have stopped, or the reports never came. It is a warning (a possible reporting gap) only for a domain with reports on at least 7 of the 14 baseline days and on both baseline days with the same weekday (`sameWeekdayReportDays` = 2). Otherwise it is a note: a domain that sends on weekdays only is quiet every Saturday. `lastReportDate` shows whether reports have arrived since.
+- **No reports** — the evaluated day has no reports at all. That is not counted as a drop: the mail may have stopped, or the reports never came. It is a warning (a possible reporting gap) only for a domain with reports on at least 7 of the 14 baseline days and on both baseline days with the same weekday (`sameWeekdayReportDays` = 2), or for a new domain as below. Otherwise it is a note: a domain that sends on weekdays only is quiet every Saturday. `lastReportDate` shows whether reports have arrived since.
 - **Reports stopped** — no reports for more than 7 days before the evaluated day, and for longer than any gap in the baseline (`baselineMaxGapDays`). A warning whether or not the domain is a sparse sender, so a daily sender that stops stays flagged rather than turning into a sparse sender a week later; also for a domain with no reports in the baseline at all.
 - **Sparse sender** — reports on fewer than 7 of the 14 baseline days, such as weekly batches. Days without mail are normal for such a domain, so its volume is not judged and the report says so instead of flagging every quiet day, with the days since the last report.
+- **New domain** — its first report (`firstReportDate`) falls inside the baseline. The baseline days before it are not days without reports, so its report days are counted from that report: with 1–6 of them it is a new domain rather than a sparse sender, and its volume is not judged. With 7 or more, a day without reports is a warning when it had reports on the one baseline day of the same weekday since its first report.
 - **No baseline yet** — no reports in the 14 baseline days, but reports on the evaluated day or after it: a new domain. Its volume is not judged, and it is not called a sparse sender.
 - **Compliance drop** — `dmarcPct` under the baseline's 5th percentile (`dmarcQ5`).
-- **Unknown senders** — `unknownCount` over the baseline's 95th percentile.
+- **Unknown senders** — `unknownCount` over the baseline's 95th percentile: strangers or spoofing, or the domain's own mail failing DMARC (the `sourceReason` of the unknown rows in `get_domain_source_details` tells which).
 
 ---
 
@@ -173,11 +192,13 @@ What it flags:
 
 Top sending sources broken down by source type (known/unknown/forward), with compliance stats per source. The top 20 of each type. Use before `get_domain_source_details` to identify which senders to investigate.
 
+Mail is classified known only when it passes DMARC. Unknown holds strangers and spoofing, but also the domain's own mail that fails DMARC; the `sourceReason` of the rows in `get_domain_source_details` tells them apart. The type is decided per report record, so one provider can appear under two types.
+
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `project_id` | int | yes | Project ID |
 | `domain` | string | yes | Domain name |
-| `source_type` | string | no | Filter: `known`, `unknown`, or `forward` (default: all) |
+| `source_type` | string | no | Filter: `known`, `unknown`, or `forward`; omit it (or pass `all`) for every type. Any other value is refused |
 | `group_by` | string | no | Row identity: `provider` (default, one row per ESP/ISP) or `domain` (one row per sending domain, with its place in the readiness plan) |
 | `stats_period_start` | string | no | Start date `YYYY-MM-DD` |
 | `stats_period_end` | string | no | End date `YYYY-MM-DD` |
@@ -196,13 +217,13 @@ With `group_by=domain`, each row is one sending source, keyed the way the readin
 
 ### `get_domain_source_details`
 
-Per-record source view with flexible grouping and filtering. Use to drill into specific senders, isolate authentication failures, or investigate by provider/IP/reporter.
+Per-record source view with flexible grouping and filtering. Use to drill into specific senders, isolate authentication failures, or investigate by provider/IP/reporter/report. The answer is `{period, coverage, page, totalRecords, rows}`.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `project_id` | int | yes | Project ID |
 | `domain` | string | yes | Domain name |
-| `group_by` | string | no | `isp` (default) / `ip` / `host` / `reporter` |
+| `group_by` | string | no | `isp` (default) / `ip` / `host` / `reporter` / `report` |
 | `stats_period_start` | string | no | Start date `YYYY-MM-DD` |
 | `stats_period_end` | string | no | End date `YYYY-MM-DD` |
 | `page` | int | no | Page number, default 1 |
@@ -218,9 +239,16 @@ Per-record source view with flexible grouping and filtering. Use to drill into s
 | `dkim_domain` | string | no | Filter by DKIM signing domain |
 | `dkim_selector` | string | no | Filter by DKIM selector |
 | `spf_domain` | string | no | Filter by SPF auth domain (return-path domain) |
+| `reporter` | string | no | Filter by DMARC reporter: its name or brand domain as `group_by=reporter` shows them (e.g. `Mail.Ru` or `google.com`), any case but exact |
 | `problems_only` | bool | no | ISP grouping only: show only rows with auth failures |
 
+A value outside the ones listed for `eval_*`, `source_type` or `disposition` is refused.
+
 Note: with `group_by=isp`, the same provider may appear multiple times with different countries (one row per provider+country).
+
+`group_by=report` gives one row per aggregate report, newest window first: `reporter`, `reportKey` (tells two reports apart), `windowStart` / `windowEnd` (UTC), `reportDate` (the day it is filed under: the UTC day its window begins), `receivedAt`, `lagHours` (`receivedAt` − `windowEnd`), `records`, `total`, `dmarcPass`, `quarantined`, `rejected`. Every other filter but `problems_only` narrows it too, so to see which reports arrived and what each counted in full, filter by `reporter` alone. Next to the rows, `reporterLag` gives per reporter `reports`, `medianLagHours`, `typicalLagHours` (90th percentile), `maxLagHours` and `latestWindowEnd` (the end of the newest window it reported for this domain). It covers the project's reports of the last 30 days from all of its domains, whatever the period, as `reporterLagScope` says. A report for a window ending at T is due by about T + `typicalLagHours`: before that, a missing one is most likely still on its way.
+
+`spfRecordError` — on a row whose SPF failure one of the domain's own SPF records explains, because receivers cannot evaluate it (two SPF records, a syntax error, more than 10 DNS lookups, an include without SPF): the stored check with `returnPath`, `evaluation`, `permErrorScope`, `failedCheck`, `text`, `fixDescription` and `lastChecked`. The record has to be fixed whoever sent the row. Never on forwarded or relayed rows.
 
 Each row carries `sourceReason` and `sourceReasonText` — which evidence put the source into known, unknown or forward. The type alone does not say what to do; the reason does, and the actions are opposite:
 
@@ -240,7 +268,8 @@ Each row carries `sourceReason` and `sourceReasonText` — which evidence put th
 | `fwd_third_party_dkim` | forward | Forwarded — the relay added its own DKIM signature |
 | `fwd_arc_pass` / `fwd_arc_fail` | forward | The receiver validated an ARC chain / an ARC chain was present but failed |
 | `no_auth_pass` | unknown | Nothing authenticated — identify the sender, then authorise it or treat it as spoofing |
-| `dmarc_not_pass` | unknown | Almost aligned: something authenticated, but not for your domain. Usually a Return-Path or selector fix |
+| `spf_permerror` | unknown | SPF record broken: your SPF record lists the IP, but the receiver could not evaluate the record (permerror, most often more than 10 DNS lookups or a syntax error). Fix the record |
+| `dmarc_not_pass` | unknown | Not aligned with your domain: DMARC failed although your SPF record lists the IP (or, rarely, your DKIM passed). The IP is usually shared — your mail forwarded on the way, someone else's account using your domain, or a service not set up for it. If it is yours, sign it with DKIM for your From domain; if not, treat it as spoofing |
 | `dmarc_pass_but_not_ours` | unknown | DMARC passed, but this could not be attributed to your infrastructure |
 | `relay_broke_dkim` | unknown | Your DKIM signature is present but no longer verifies, after a known gateway, forwarder or mailbox provider relayed the mail or the receiver reported it as forwarded. Probably your mail changed on the way. A forgery relayed the same way looks identical, so it stays unknown |
 
@@ -256,7 +285,7 @@ Top 100 sending locations grouped by country, with compliance stats per location
 |-----------|------|----------|-------------|
 | `project_id` | int | yes | Project ID |
 | `domain` | string | yes | Domain name |
-| `source_type` | string | yes | `known`, `unknown`, or `forward` |
+| `source_type` | string | yes | `known`, `unknown`, or `forward`; any other value is refused |
 | `stats_period_start` | string | no | Start date `YYYY-MM-DD` |
 | `stats_period_end` | string | no | End date `YYYY-MM-DD` |
 
@@ -264,7 +293,7 @@ Top 100 sending locations grouped by country, with compliance stats per location
 
 ### `get_spf_records`
 
-SPF records from your DMARC data — return paths with recent activity, record text, DNS-lookup count, errors, pass/fail volume per source. Included in `get_domain_full_data`; call this separately only when you need this slice specifically.
+SPF records from your DMARC data — return paths with recent activity, record text, DNS-lookup count, errors, pass/fail volume over the last 15 days (`today − 14 → today`, UTC; the header names them). Included in `get_domain_full_data`; call this separately only when you need this slice specifically.
 
 Each record also carries `evaluation` and `permErrorScope` (see `dns_check_spf`) and `lastChecked`, when DMARKOFF last checked it. A record last checked before DMARKOFF recorded the evaluation has none, and `dns_check_spf` gives the current one.
 
@@ -277,7 +306,7 @@ Each record also carries `evaluation` and `permErrorScope` (see `dns_check_spf`)
 
 ### `get_dkim_records`
 
-DKIM records from your DMARC data — selectors, signing domains, record text, errors, pass/fail volume per source. Included in `get_domain_full_data`; call this separately only when you need this slice specifically.
+DKIM records from your DMARC data — selectors, signing domains, record text, errors, pass/fail volume over the last 15 days (`today − 14 → today`, UTC; the header names them). A key's `total` counts every message carrying that signature, wherever it sits among the message's signatures. Included in `get_domain_full_data`; call this separately only when you need this slice specifically.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -288,7 +317,7 @@ DKIM records from your DMARC data — selectors, signing domains, record text, e
 
 ### `get_policy_overrides`
 
-Why messages were **not** handled the way your published DMARC policy says — the receiver reported a policy override in its aggregate report. Grouped by ISP, sender host, disposition and SPF/DKIM results, largest first (top 30).
+Why messages were **not** handled the way your published DMARC policy says — the receiver reported a policy override in its aggregate report. Grouped by ISP, sender host, disposition and SPF/DKIM results, largest first (top 30). The answer is `{period, coverage, groups}`, `groups` a list even when empty.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -299,13 +328,13 @@ Why messages were **not** handled the way your published DMARC policy says — t
 
 `override_type` values: `arc_pass` (the receiver validated an ARC chain and trusted the original authentication — typical for mail forwarded through Google or Microsoft), `arc_fail`, `forwarded`, `trusted_forwarder`, `sampled_out` (the `pct=` tag excluded the message from enforcement), `local_policy`, `other`. `arc_sealer` names the domain that sealed the chain when the report says so.
 
-Use when the policy is `quarantine` or `reject` but mail still reached inboxes, or when forwarded traffic needs explaining. An empty result means no receiver reported an override in the period.
+Use when the policy is `quarantine` or `reject` but mail still reached inboxes, or when forwarded traffic needs explaining. An empty result means no receiver reported an override in the period, or, as the header then says, that the period has no reports at all.
 
 ---
 
 ### `get_smtp_rejections`
 
-Mail that receivers throttled or rejected at SMTP time, from the `Sender requirement failed: <code>` comments Google and a few others add to aggregate reports. Grouped by source type, ISP, SMTP code, disposition and auth results, largest first (top 20).
+Mail that receivers throttled or rejected at SMTP time, from the `Sender requirement failed: <code>` comments Google and a few others add to aggregate reports. Grouped by source type, ISP, SMTP code, disposition and auth results, largest first (top 20). The answer is `{period, coverage, groups}`, `groups` a list even when empty.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -316,13 +345,13 @@ Mail that receivers throttled or rejected at SMTP time, from the `Sender require
 
 `smtpCategory` names the reason behind the code: `rate_limit_spf_failure` (421-4.7.27), `rate_limit_dkim_failure` (421-4.7.30), `rate_limit_no_alignment` (421-4.7.32), `rate_limit_no_tls` (421-4.7.29), `blocked_ptr_or_rdns_mismatch` (550-5.7.25), `blocked_spf_failure` (550-5.7.27), `blocked_dkim_failure` (550-5.7.30), `blocked_other` (550-5.7.1), plus the general 421/550 buckets. Each row also carries the receiver's own wording, the reporters that saw it and the message count.
 
-Use when you hear about Gmail bounces or "temporarily rate limited" errors. An empty result means no aggregate report carried such a comment — not that nothing bounced.
+Use when you hear about Gmail bounces or "temporarily rate limited" errors. An empty result means no aggregate report carried such a comment — not that nothing bounced. When the period has no reports at all, the header says so.
 
 ---
 
 ### `get_record_history`
 
-Stored snapshots of a record, newest first: what it looked like at each check, with its health and errors at the time. Each snapshot lists `changedFromPrevious` — the fields that differ from the next older one, so a re-check that found nothing new is visibly empty.
+Stored snapshots of a record, newest first, each with its health and errors at the time. DMARKOFF stores one at its first DMARC check of a domain, or when a check first finds an SPF or DKIM record, and after that only when a check sees a change: a different record, for SPF also a different lookup count or `rules_changed` (below). Each snapshot is kept 12 months. Each one lists `changedFromPrevious` — the fields that differ from the next older one; a DKIM key rotation shows as `record`.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -334,9 +363,9 @@ Stored snapshots of a record, newest first: what it looked like at each check, w
 | `selector` | string | for dkim | `dkim` only: the selector — list them with `get_dkim_records` |
 | `limit` | int | no | Snapshots to return, default 10, max 50 |
 
-SPF snapshots also carry `reason`, why DMARKOFF saved them: `record_changed`, `lookup_count_changed` or `rules_changed`. `rules_changed` means DMARKOFF's SPF checker was updated and now rates the same DNS record differently, while the record itself did not change. They carry `evaluation` and `permErrorScope` too (see `dns_check_spf`), empty on snapshots taken before DMARKOFF recorded them, and `changedFromPrevious` names `evaluation` when it changed.
+SPF snapshots also carry `reason`, why DMARKOFF saved them: `record_changed` (a first snapshot too), `lookup_count_changed` or `rules_changed`. `rules_changed` means DMARKOFF's SPF checker was updated and now rates the same DNS record differently, while the record itself did not change. They carry `evaluation` and `permErrorScope` too (see `dns_check_spf`), empty on snapshots taken before DMARKOFF recorded them, and `changedFromPrevious` names `evaluation` when it changed. `reason` is absent on snapshots stored before mid-March 2026 and `lookupCount` on those before early March 2026; `changedFromPrevious` lists `lookupCount` only when both snapshots carry it.
 
-Use after `get_domain_activity_health` or `get_domain_timeline` showed *when* compliance dropped, to check whether a DNS change explains it. No snapshots means the record has not been checked yet or the return path / selector does not match a monitored record — not that it is absent from DNS.
+Use after `get_domain_activity_health` or `get_domain_timeline` showed *when* compliance dropped, to check whether a DNS change explains it. No snapshots means the record has not been checked (or found) yet, has not changed in the last 12 months, or the return path / selector does not match a monitored record — not that it is absent from DNS. A domain the project does not hold is refused with `domain not found`.
 
 ---
 
@@ -362,7 +391,7 @@ A mechanism whose `spfPass` is far below its `total` is being used by a sender w
 
 When the record cannot be read because the DNS lookup failed temporarily (`temperror`: a SERVFAIL, a timeout), the tool says so and returns no tree. That is not a missing record — receivers retry such mail.
 
-The response also carries the record's `evaluation` and `permErrorScope` (see `dns_check_spf`). A record that receivers never evaluate (`permerror` with `permErrorScope` `record`, from a syntax error or several SPF records) fails SPF for every message. For such a record the tool returns only the volume (`totals`) and, when there are several, every record. Fix the record first. A permerror reached partway keeps the per-mechanism view, and the header names the failing term. Terms marked `ignored` are never evaluated by receivers and get no traffic.
+The response also carries the record's `evaluation` and `permErrorScope` (see `dns_check_spf`). For a record receivers do not evaluate as one record (`permerror` with `permErrorScope` `record`) the tool returns only the volume (`totals`) and, when there are several records, every record. A syntax error fails SPF for every message; with several SPF records receivers differ, so the result is unpredictable. Fix the record first. A permerror reached partway keeps the per-mechanism view, and the header names the failing term. Terms marked `ignored` are never evaluated by receivers and get no traffic.
 
 ---
 
@@ -434,7 +463,7 @@ Live SPF lookup: record text, what receivers evaluate it to, parsed include tree
 
 Returns, besides the record and its include tree:
 - `evaluation` — what receivers' SPF check returns for the record: `ok` (pass or fail then depends on the sending IP), `none` (no record), `permerror` or `temperror`. DMARC counts a permerror as an SPF fail.
-- `permErrorScope` — on a permerror. `record` means receivers never evaluate the record (a syntax error anywhere in it, or several SPF records), so SPF fails for every message and `lookupCount` 0 means "not counted". `evaluation` means the record breaks partway (an include or redirect target without a valid SPF record, more than 10 DNS lookups, more than 2 void lookups). Senders matched before that point still pass, and every other sender gets permerror.
+- `permErrorScope` — on a permerror. `record` means receivers that follow RFC 7208 do not evaluate it as one record, and `lookupCount` 0 means "not counted". With a syntax error anywhere in it, SPF fails for every message. With several SPF records receivers differ — some return permerror, some report fail, some evaluate one of the records — so the result is unpredictable: merge them into one. `evaluation` means the record breaks partway (an include or redirect target without a valid SPF record, more than 10 DNS lookups, more than 2 void lookups). Senders matched before that point still pass, and every other sender gets permerror.
 - `voidLookups` — lookups of the record's mechanisms that returned no answer.
 - `records` — every SPF record at the name, when there is more than one.
 - `ignored` — on parts of the include tree that receivers never evaluate.
@@ -447,11 +476,18 @@ A result other than `ok` also gets a one-line verdict ahead of the details.
 
 ### `dns_check_dmarc`
 
-Live DMARC lookup: record text, parsed policy (none/quarantine/reject), errors.
+Live DMARC lookup: record text, parsed policy (none/quarantine/reject), errors. `records` lists the DMARC records when several are published at `_dmarc.<domain>`: receivers then use none of them.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `domain` | string | yes | Domain name |
+| `project_id` | int | no | A project the domain belongs to: also checks the record against it. Pass it after publishing a record for a domain of a project |
+
+With `project_id` the answer adds `reportsToProject`:
+- `address` — what `rua` must carry: the project's `monitoringEmail` when set, DMARKOFF's reporting address otherwise.
+- `found` — whether the live record has it, the same check that makes a domain Monitored; null when that cannot be told.
+- `inProject` — whether the project holds the domain (null when that could not be read), and `dmarcStatus` its status there.
+- `note` — what follows: when `dmarcStatus` turns Monitored and reports come, or why not (the domain is not in the project or is in another one, is excluded or unpaid, or publishes several records). An inherited record makes the domain Monitored, but its reports are filed under the organizational domain.
 
 `tempError` is true when the lookup failed at some step of the search, and `lookupFailure` names the step (`qname`, `_dmarc.<name>`) and the cause: `servfail`, `refused`, `timeout` or `error`. An empty record then means the record could not be checked — not that the domain has no DMARC.
 
@@ -474,7 +510,7 @@ All TXT records for a domain with TTL and type classification: `spf`, `spf-ignor
 
 `spf-ignored` is a record that looks like SPF but that receivers do not read as SPF, so it is never counted as a second SPF record. Its error (`txt_spf_record_format_ok`) explains why and what to do.
 
-Useful for detecting duplicate SPF records (multiple `v=spf1` entries cause SPF to fail) or verifying a newly published record is visible.
+Useful for detecting duplicate SPF records (RFC 7208 makes multiple `v=spf1` entries a permerror, but receivers differ, so SPF results are unpredictable — merge them into one) or verifying a newly published record is visible.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -490,22 +526,22 @@ Without `p`, `sp` or `np` the record keeps the policy receivers apply now, for t
 
 When the current record cannot be read, the note names the DMARC lookup step that failed and why.
 
-Pass `project_id` for a domain in a DMARKOFF project: the project's reporting address is added to `rua`, which is what makes DMARKOFF receive aggregate reports for it.
+Pass `project_id` for a domain in a DMARKOFF project: the address DMARKOFF checks is added to `rua` — the project's `monitoringEmail` when set (an MSP mailbox that forwards the reports to DMARKOFF), DMARKOFF's reporting address of the project otherwise — which is what makes DMARKOFF receive aggregate reports for it. `reportingAddress` is the address added.
 
-Returns the host to publish at (`_dmarc.<domain>`), the current record with its status (`published`, `inherited`, `none`, `lookupFailed`), and the recommended record. Nothing is published — you add the TXT record in your DNS zone, then verify with `dns_check_dmarc`.
+Returns the host to publish at (`_dmarc.<domain>`), the current record with its status, and the recommended record. `currentRecordStatus` is `published`, `inherited` (only a parent domain publishes one: the domain needs a record of its own for its reports to be filed under it), `none`, `unusable` or `lookupFailed`. `unusable` is something receivers ignore: several records or a CNAME/TXT conflict, which `note` says to fix in DNS first, or a record at the domain itself rather than at `_dmarc`, which the recommended record replaces. For a record the domain publishes, `changes` lists what the recommended record changes, tag by tag (`{tag, from, to}`; no `from` for an added tag, no `to` for a removed one). Nothing is published — you add the TXT record in your DNS zone, then verify with `dns_check_dmarc` and `project_id`.
 
 Use it for onboarding and for tag changes. It keeps `pct` as it is. To move a domain to a stricter policy or to take `pct` off, publish `nextRecord` from `get_enforcement_status`, the readiness plan's record for that step.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `domain` | string | yes | Domain name |
-| `project_id` | integer | no | Adds the project's reporting address to `rua` |
+| `project_id` | integer | no | Adds the address DMARKOFF checks for the project to `rua` |
 | `p` / `sp` / `np` | string | no | Policy, subdomain policy, non-existent subdomain policy: `none`, `quarantine`, `reject` |
 | `adkim` / `aspf` | string | no | Alignment: `s` (strict) or `r` (relaxed) |
 | `fo` | string | no | Failure reporting options: `0`, `1`, `d`, `s` joined by `:` |
 | `t` | string | no | RFC 9989 test mode: `y` or `n` |
 | `psd` | string | no | Public suffix domain flag: `u`, `n`, `y` |
-| `rua_emails` | string | no | Comma-separated addresses replacing the ones in the current record |
+| `rua_emails` | string | no | Comma-separated addresses replacing the ones in the current record; the project's address is always kept |
 | `transfer_ruf` | string | no | Keep the `ruf` tag of the current record: `true` or `false` |
 
 ---
@@ -518,9 +554,18 @@ Adds one or more domains to a project so their DMARC reports start being collect
 
 Requires **owner** access to the project — domains cannot be added to a project shared with you. Each non-parked domain consumes a paid domain slot on the account's plan; `parked` domains (zones that send no mail) do not.
 
-Domains that already exist are reported as skipped, invalid ones as failed, and the rest are still added.
+Domains already in the account are reported as `skipped`, with where they are (`projectId`, and `dmarcStatus` when in this project); invalid ones as `failed`; the rest are still added. A domain added with a warning (its monitoring did not start, say) is in `added` and in `warnings`. `add_domain` does not move a domain from another project, nor change whether one is parked, paid or excluded. Repeating a call is safe: a domain already in this project that is not Monitored, excluded or unpaid gets its DNS setup again.
 
-Registering the domain is only half the job: reports start flowing once the DMARC record is published. For a single domain the response carries the exact record; for several, a template plus the list of domains that already publish their own record — call `generate_dmarc_record` for each of those, since the template would drop the tags they already have.
+Registering the domain is only half the job: reports start flowing once the domain's own DMARC record has the project's address in `rua` (`dnsSetup.reportingAddress`: the project's `monitoringEmail` when set). A record inherited from a parent domain is not enough. For a single domain, `dnsSetup` is the exact record, as `generate_dmarc_record` returns it, and `nextStep` says what to do with it. For several, it is a template plus the domains sorted by what they publish:
+- `templateApplies` — no DMARC record, or an inherited one the template would not change: publish the template as is.
+- `needsMerge` — a record of their own, something receivers ignore, or an inherited one the template would change: call `generate_dmarc_record` for each, as the template would drop their tags, add one more record or lower their policy.
+- `alreadyReporting` — their own live record already has the address: nothing to publish.
+- `notInDns` — the domain does not exist in DNS: check the spelling.
+- `checkFailed` — the lookup failed: call `generate_dmarc_record` for each.
+
+When the project's address cannot be read, there is no `dnsSetup`, and `nextStep` says to call `generate_dmarc_record` with `project_id`.
+
+Once the record is live, DMARKOFF checks a newly added domain every 5 minutes for 24 hours, so `dmarcStatus` turns Monitored within about 5 minutes; a domain still without the address after 24 hours becomes NotMonitored and is no longer checked until "Reinitiate monitoring" in the web app, or until a report of it is processed. The first reports usually arrive 24–48 hours after the record goes live; until then the data tools answer with `coverage.noReports`. Check the record with `dns_check_dmarc` and `project_id`.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -536,7 +581,7 @@ Registering the domain is only half the job: reports start flowing once the DMAR
 
 **Writes.** Records your call on one sending source of a domain, or clears it. The readiness plan (`get_enforcement_status`) counts the domain's sources by these decisions. The tool tells the assistant to use it only to save a call you made and asked it to save.
 
-Requires **owner** access to the project. The change goes through the DMARKOFF API, which checks access on every call.
+Requires the project's owner, or a viewer of a shared project whose owner lets it manage sources. The change goes through the DMARKOFF API, which checks access on every call.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -577,21 +622,26 @@ When a call times out, its outcome is unknown. Check `decisions` in `get_enforce
 
 | Field | Meaning |
 |-------|---------|
-| `dmarcStatus` | Whether the domain is monitored in DMARKOFF — NOT whether a DMARC DNS record exists. Values: `Monitored`, `Pending`, `NotMonitored`. Use `dns_check_dmarc` for the actual DNS record. |
-| `reportStatus` | Whether DMARC aggregate (rua) reports are arriving. `Receiving` = reports coming in; `NotReceiving` = no reports yet. |
-| `reportProcessingStatus` | Whether the system is actively processing reports. `Processing` / `NotProcessing`. |
-| `userOverride` | Manual override set in the UI: `Monitored`, `Excluded`, or `Invalid`. Domains with `Excluded` are hidden in `list_domains`. |
+| `period` | The days a tool read: `start`, `end`, `days` (both ends inclusive), and `endClamped` when the end asked for was after today. |
+| `coverage` | The days the project has reports for the domain, whatever the period: `firstReport` and `lastReport`, or `noReports`. A period before `firstReport` is one DMARKOFF did not see the domain, not one without mail. |
+| `dmarcStatus` | Whether the project's address (its `monitoringEmail` when set, DMARKOFF's reporting address otherwise) was in the domain's DMARC `rua` at the last check — NOT whether a DMARC DNS record exists, nor whether reports arrive (`coverage` says that). `Monitored`; `Pending` — not yet, while DMARKOFF checks the domain every 5 minutes for 24 hours after it was added; `NotMonitored` — not found, and DMARKOFF no longer checks it (also set when the domain is excluded or unpaid). Use `dns_check_dmarc` with `project_id` for the actual DNS record. |
+| `monitoring` | In `get_domain_full_data` and `get_domain_detail`, for a domain that is NotMonitored, Pending, excluded or unpaid: why, the address `rua` must carry, and the fix. |
+| `reportStatus` | A sticky flag, not whether reports arrive now: `Receiving` once a report reached DMARKOFF since the domain was added; only a domain DMARKOFF evaluates daily (paid, not parked, Monitored, not excluded) goes back to `NotReceiving` after 2 days without reports. Whether the project still gets reports is `coverage.lastReport`. |
+| `reportProcessingStatus` | `Processing` / `NotProcessing`: a label set when the domain is added, paid, unpaid, parked, excluded or included, which nothing decides by. Which reports are processed follows `paid`, `parked` and `userOverride`. |
+| `userOverride` | `Monitored`, the default (not excluded), or `Excluded`: the user took the domain out of monitoring in the web app, and its reports are not processed. Excluded domains are not listed in `list_domains`. |
 | `parked` | The domain is not meant to send mail: health metrics do not apply, and no reports is its normal. Mail reported for it is sent as a domain that should send none — spoofing when it fails DMARC, a forgotten or compromised sender when it passes — and is worth a look at its sources. DMARKOFF processes one report a day for a parked domain, so its volumes are a floor. |
 | `policy_override` | Override applied by the receiving mail server (from the DMARC XML report). Not the same as the user's manual override. |
 | `compliancePct` | Compliant messages over all messages — the number the DMARKOFF app shows. Forwarded mail is excluded from the numerator but stays in the denominator, so it reads lower than the raw pass rate in `get_domain_stats` when a domain has forwarding traffic. Different metrics, not a contradiction. |
-| `pctEligibleForPolicy` | The same rate over eligible messages only: compliant / (messages − forwarded). |
+| `pctEligibleForPolicy` | The same rate over eligible messages only: compliant / (messages − forwarded). 0 by convention when all mail was forwarded, and `noEligibleMail` says so. |
+| `pctFromKnownSources` / `complianceKnownPct` | The DMARC compliance of known-source mail, not the share of mail from known sources. Mail is classified known only when it passes DMARC, so it reads 100 whenever there is known mail: no measure of your own senders. |
 | `dmarcFail` | Two definitions, both matching the app: in a stats summary it is `messages − compliant`, so forwarded mail counts as a failure and it stays consistent with `compliancePct`; in a timeline row it is `messages − compliant − forwarded`. The summary is therefore larger than the sum of the timeline column. For messages that actually failed the policy check, use `get_domain_stats`. |
 | `fix` / `failedCheck` / `fixDescription` | On every record error: the fix code, the check that produced it, and the remediation text the app shows for that code. |
 | `checkDescription` | What the failed check means, as the app explains it. On the first error of each `failedCheck` in a list; later errors of the same check leave it out. |
 | `sourceReason` / `sourceReasonText` | Why a source was classified known / unknown / forward — see the table under `get_domain_source_details`. |
+| `spfRecordError` | In `get_domain_source_details`: the stored check of one of the domain's own SPF records that receivers cannot evaluate, on a row whose SPF failure it explains. Fix the record, whoever sent the row. |
 | `excludeFromHealth` | On SPF/DKIM records: the record was suppressed in the app. It is still listed with its own health and errors, but it does not feed the domain's severity — so a Critical record under a Healthy domain is expected, not a contradiction. |
 | `missingReturnPaths` | ESPs sending with their own Return-Path instead of your domain — causes SPF alignment failure. Fix: configure a Custom Return-Path at the ESP. |
-| `evaluation` / `permErrorScope` | On SPF records, live and stored: what receivers' SPF check returns, `ok`, `none`, `permerror` or `temperror`. `permErrorScope` `record` means the record is never evaluated and SPF fails for every message. `evaluation` means it breaks partway, and senders matched before that point still pass. |
+| `evaluation` / `permErrorScope` | On SPF records, live and stored: what receivers' SPF check returns, `ok`, `none`, `permerror` or `temperror`. `permErrorScope` `record` means receivers that follow RFC 7208 do not evaluate it as one record: a syntax error fails SPF for every message, several SPF records give results that differ by receiver. `evaluation` means it breaks partway, and senders matched before that point still pass. |
 | `ready` / `nextStep` / `nextRecord` | In `get_enforcement_status`: whether the domain can take its next step now, the policy that step reaches (the current one when the step takes `pct` off), and the record to publish for it. |
 | `readinessPct` | The share of the domain's own mail signed with aligned DKIM over `windowDays` days. It shows progress. The blockers and confirmations decide the verdict. |
 | `verdict` | The readiness plan's call on a source's mail: `aligned` (own mail signed with aligned DKIM), `needs_dkim` (own mail that is not), `relay` (mostly forwarded or gateway mail), `unattributed` (mostly mail nobody has identified, spoofing included), `inactive` (sent in the last 28 days but not in the last 14), `low_volume` (too little own mail to judge). A decision never changes it. |
@@ -605,6 +655,8 @@ Which SPF/DKIM records are listed at all: those the domain's health is computed 
 
 ```
 projects_overview
+  → project without domains, or a domain to start monitoring:
+      add_domain → publish the record in dnsSetup → dns_check_dmarc (project_id)
   → list_domains (project_id, optional severity filter)
     → get_domain_full_data (domain, project_id)   ← read previousPeriod first: is this new?
       → get_domain_anomaly_report (for multi-domain anomaly check)
@@ -620,6 +672,8 @@ Then, by symptom:
 policy published but not enforced   → get_policy_overrides
 Gmail bounces or rate limiting      → get_smtp_rejections
 "when did this change?"             → get_record_history (dmarc / spf / dkim)
+"is this report late or missing?"   → get_domain_source_details (group_by=report, reporter)
+"will its reports reach us?"        → dns_check_dmarc (project_id)
 SPF over the 10-lookup limit        → get_spf_usage
 "can we go to quarantine / reject?" → get_enforcement_status
 "this sender is ours / not ours"    → set_source_decision (only on your word)
