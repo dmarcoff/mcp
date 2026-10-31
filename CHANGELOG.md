@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-10-31
+
+### Added
+- Report coverage on the per-domain tools (`coverage`): the answer says when the period starts before the domain's first report, runs past its last one, or includes days whose reports are still arriving.
+- `get_domain_source_details` takes a `reporter` filter and `group_by=report`: one row per aggregate report with its window and delay. `reporterLag` gives how long each reporter usually takes, to tell a late report from a missing one.
+- `dns_check_dmarc` with `project_id` says whether the record sends reports to that project (`reportsToProject`).
+- `generate_dmarc_record` lists what it changes in the published record (`changes`). `add_domain` can be repeated, and sorts the domains by what to publish.
+- `monitoring` in `get_domain_full_data` and `get_domain_detail`: why a domain is not monitored, pending, excluded or unpaid, and the action in the app that fixes it.
+- `projects_overview` returns `monitoringEmail`, `period` and `noReports`, and `nextStep` for a project without domains.
+
+### Changed
+- Tools that read a period return it (`period`). A one-day period is one day, the end defaults to today, and an invalid date is an error. `get_domain_source_details`, `get_policy_overrides` and `get_smtp_rejections` answer with an object instead of a bare list; `get_domain_stats` puts its row under `stats`.
+- The `rua` address is the project's `monitoringEmail` when it has one.
+- The record summaries in `get_domain_full_data` follow the requested period, and DKIM key summaries count every signature.
+- `complianceKnownPct` is described as what it is: DMARC compliance of known-source mail, which reads 100 whenever there is any.
+- New source reason `spf_permerror` ("SPF record broken"); `dmarc_not_pass` now reads "Not aligned with your domain".
+
+### Fixed
+- `get_domain_anomaly_report` counts a domain whose reports began within the baseline from its first report (`firstReportDate`) instead of calling it a sparse sender.
+- `get_domain_full_data`, `get_domain_detail` and `get_record_history` answer "domain not found" for a domain the project does not hold, instead of an internal error or an empty answer. `get_domain_senders` and `get_geo_sources` refuse an invalid `source_type`.
+- `get_record_history` shows a DKIM key rotation as a change, and no longer shows `lookupCount` 0 for old SPF snapshots that never stored one.
+- A project created or shared a moment ago is reachable without reconnecting, and one taken off the key is refused within minutes.
+
+---
+
 ## 2026-10-20
 
 ### Added
