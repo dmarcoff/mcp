@@ -393,6 +393,8 @@ When the record cannot be read because the DNS lookup failed temporarily (`tempe
 
 The response also carries the record's `evaluation` and `permErrorScope` (see `dns_check_spf`). For a record receivers do not evaluate as one record (`permerror` with `permErrorScope` `record`) the tool returns only the volume (`totals`) and, when there are several records, every record. A syntax error fails SPF for every message; with several SPF records receivers differ, so the result is unpredictable. Fix the record first. A permerror reached partway keeps the per-mechanism view, and the header names the failing term. Terms marked `ignored` are never evaluated by receivers and get no traffic.
 
+A return path can have a CNAME next to its own TXT records, with different SPF records on the two sides (a Critical `dns_record_found` error in `dnsErrors`; see `spfDnsConflict` in `dns_check_spf`). The tool then keeps the view of the record its resolver returned, and the header says that only the receivers on that side check it.
+
 ---
 
 ### `get_enforcement_status`
@@ -408,13 +410,14 @@ Anyone with access to the project can read the plan. A viewer of a shared projec
 
 `status`:
 - `current` — the plan speaks for the domain. `ready` says whether it can take `nextStep` now, and `nextRecord` is the record to publish for that step. `nextRecordTesting` is the same record with `t=y`, a variant for a cautious start. At `reject` without `pct` there is no next step, so `nextStep` is null and `ready` is false.
-- `not_current` — the last plan no longer describes the domain. `reason` is `domain_inactive`, `older_than_72h`, `policy_changed`, `step_mismatch`, `pct_mismatch` or `no_policy`. There is no verdict. `evaluatedAt`, `step` and `pct` say what the plan judged, and `domainState` what the domain is now.
+- `not_current` — the last plan no longer describes the domain. `reason` is `domain_inactive`, `older_than_72h`, `policy_changed`, `step_mismatch`, `pct_mismatch` or `no_policy`. There is no verdict. `evaluatedAt`, `step` and `pct` say what the plan judged, `version` and `thresholds` by which rules, and `domainState` what the domain is now.
 - `none` — no plan yet. DMARKOFF evaluates active domains (paid, not parked, monitored, not excluded) once a day, and `domainState` shows which of these the domain is.
 
 Every answer carries `decisions`, whatever its `status`. These are your live decisions on the domain's sources, with `sourceKey`, `provider`, `decision`, `owner`, `note`, `updatedBy`, `updatedAt`, `confirmedAt` and `pendingRecompute`. The plan takes a change in when DMARKOFF re-evaluates the domain, usually within about a minute. Against a current plan, `pendingRecompute` is true until then, and a decision you removed stays listed with `decision` null. `pendingRecompute` is null when the plan is not current or does not list the source.
 
 Fields of a current plan:
 - `evaluatedAt`, `lastDay`, `step`, `testing` — when the plan was evaluated, the last report day it read, the policy in force, and whether the record has `t=y`.
+- `version` — the version of DMARKOFF's rules the plan was evaluated by. A field added with a later version is absent in a plan from before it.
 - `readinessPct` — the share of the domain's own mail signed with aligned DKIM over the last `windowDays` days, in percent; null without own mail to judge. It shows progress. The blockers and the open confirmations decide the verdict, so one blocking source can hold the step at 99%.
 - `windowDays` — 14, or 28 when the last 14 days give no evidence (under 20 judged own messages, and no source you call ours that signs all of its mail).
 - `tenure` — `reportDays` and `daysAtPolicy` against the `requiredReportDays` and `requiredDaysAtPolicy` the step needs.
@@ -424,6 +427,28 @@ Fields of a current plan:
   - `record` — a record with a critical error; `record` names the return path or selector.
   - `regression` — the policy went up, or `pct` came off, and an own source is being cut.
   - `evidence` — nothing shows the step is safe. Subtype `low_volume` means too little own mail, `no_mail` no own mail in the last 28 days.
+- `failedRule` — on a `needs_dkim` blocker and on `info.spfOnly` / `info.smallNotAligned`, from rules version 10: the rule the source fails by, over the window its figures cover. The numbers are in `thresholds`:
+
+  | `failedRule` | What it means |
+  |--------------|---------------|
+  | `window_share` | The source has `minVolume` or more messages of its own over the window, and under `minDkimAlignedPct` of them are signed with aligned DKIM |
+  | `day_share` | The window passes, but on a day with `dayMinVolume` or more of its messages, under `minDayDkimAlignedPct` were signed and `minUnsigned` or more were not |
+  | `unsigned_count` | The source has under `minVolume` messages of its own over the window, and `minUnsigned` or more of them are not signed. A share says nothing on so few, so the count decides |
+
+- `holdsBy` — on a `needs_dkim` blocker, from rules version 10: why that failure holds the step. `share` means the source carries `minShareOfOwnMailPct` or more of the domain's own mail. `volume` means it carries less, but it is `not_aligned` with `minVolume` or more messages of its own. A recommendation in `info` holds nothing and has no `holdsBy`.
+- `thresholds` — the numbers the plan's rules go by, from rules version 10. The tool tells the assistant to quote them rather than numbers of its own:
+
+  ```json
+  "thresholds": {
+    "recentDays": 14, "historyDays": 28,
+    "minDkimAlignedPct": 97, "minDayDkimAlignedPct": 95, "dayMinVolume": 10,
+    "minShareOfOwnMailPct": 1, "minVolume": 20, "minUnsigned": 2,
+    "stepDays": {"quarantine": 14, "reject": 28},
+    "watchActiveDays": 3
+  }
+  ```
+
+  `recentDays` and `historyDays` are the two windows the plan reads. `stepDays` is the days of reports and at the policy that the step to each policy asks for: `tenure` has those of the step in hand, `stepDays` also those of the step after it. `watchActiveDays` is the last judged days over which the rollback watch calls a source active. The shares are in percent, like `dkimAlignedPct` and `shareOfOwnMailPct`.
 - `signedBy` — on a `needs_dkim` blocker and on `info.spfOnly` / `info.smallNotAligned`: who signed the source's mail without aligned DKIM, largest first, up to 5. It tells you where the fix is:
 
   | `kind` | What it means | Where to fix it |
@@ -436,10 +461,16 @@ Fields of a current plan:
   | `foreign_failed` | Only another organisation's signature, and it failed | At that sender |
   | `unsigned` | No DKIM signature | Enable DKIM at the sender |
 
+- `fix` — on the largest signer, and on the second when it is of another kind and has at least a third of the largest's mail: what to do about that mail, in the words the DMARKOFF app's plan shows. The tool tells the assistant to repeat `text` and to advise nothing it does not say.
+  - `text` — the advice. It names the signer and the fix.
+  - `records` — the DNS names the fix is about, to publish or to check: `type`, `name` and `value`, with the `domain` and `selector` that `dns_check_dkim` takes.
+  - `service` — a hint for the sending service: its `name`, `where` the setup is, a common `pitfall`, `docUrl`, and `checkedAt`, the day DMARKOFF last checked the hint. With `condition`, the hint holds only if the mail goes out from your own account at that service.
+- `fixExpect` — on the plan, when a signer carries a `fix`: what to expect after it. Mail signed after the fix shows up in your reports within 1 to 3 days, and the plan stops listing the source within 14 days, or 28 for a step to `reject` and at `reject`.
 - `confirmations` — unattributed sources you have to call not yours before the step, with `messages`, `shareOfAllMailPct` and the classifier's `topReasonText`. A domain with an open confirmation is not ready.
 - `sources` — the 50 largest sources, as a table of `sourceKey`, `provider`, `category`, `verdict`, `decision`, `messages` and `dkimAlignedPct`. `verdict` is one of `aligned`, `needs_dkim`, `relay`, `unattributed`, `inactive`, `low_volume`.
 - `excluded` — sources that look like the domain's own but were taken out (`not_ours` or `ignore`), with who decided and when.
-- `info` — findings that never block: spoofing and relay volume (`spoofMessages`, `relayMessages`), own sources that do not align SPF (`spfNotAligned`), and own sources that need DKIM but are too small to hold the step (`spfOnly`, `smallNotAligned`). These are still worth fixing, because their mail that fails DMARC is lost once the policy goes up.
+- `info` — findings that never block: spoofing and relay volume (`spoofMessages`, `relayMessages`), own sources that do not align SPF (`spfNotAligned`), and own sources that need DKIM but are too small to hold the step (`spfOnly`, `smallNotAligned`, each with `failedRule` and `signedBy`). These are still worth fixing, because their mail that fails DMARC is lost once the policy goes up.
+  - Each `spfNotAligned` source has `spfAlignedPct`, `customReturnPathSupported` and `fix`. Its mail passes DMARC by DKIM, so the step does not wait for it. Where the provider offers a Return-Path on your own domain, `fix.text` says to set one up, `fix.service` is a hint for the providers DMARKOFF has one for, and `fix.expect` says what follows: the plan stops listing the source within 14 days. Where the provider offers none, `fix.text` says that nothing needs doing.
 - `pct` — present only while the record has `pct` below 100 at `quarantine` or `reject`. Receivers that still read `pct` apply the policy to only that share of the mail failing DMARC. The next step then takes `pct` off at the same policy (`nextStep` equals `step`), `nextRecord` is the record without `pct` (at `reject` it also adds `np=reject` when the record has no `np`, as every step to `reject` does), and there is no `nextRecordTesting`. The plan judges the next policy only after that.
 - `regression` — the rollback watch, for 30 days after the policy went up or `pct` came off (`from`, `changedAt`, `until`). `sources` lists own sources whose mail receivers now quarantine or reject, with `cutMessages` and `cutPct`. `questions` lists sources you took out that looked like your own before the change and whose mail the new policy now cuts. A question with `confirmed` false is open. You answer it with `set_source_decision` and `confirm`, or change the decision if the source is yours after all.
 
@@ -464,13 +495,17 @@ Live SPF lookup: record text, what receivers evaluate it to, parsed include tree
 Returns, besides the record and its include tree:
 - `evaluation` — what receivers' SPF check returns for the record: `ok` (pass or fail then depends on the sending IP), `none` (no record), `permerror` or `temperror`. DMARC counts a permerror as an SPF fail.
 - `permErrorScope` — on a permerror. `record` means receivers that follow RFC 7208 do not evaluate it as one record, and `lookupCount` 0 means "not counted". With a syntax error anywhere in it, SPF fails for every message. With several SPF records receivers differ — some return permerror, some report fail, some evaluate one of the records — so the result is unpredictable: merge them into one. `evaluation` means the record breaks partway (an include or redirect target without a valid SPF record, more than 10 DNS lookups, more than 2 void lookups). Senders matched before that point still pass, and every other sender gets permerror.
-- `voidLookups` — lookups of the record's mechanisms that returned no answer.
+- `voidLookups` — lookups of the record's mechanisms that returned no answer. An `include:` or `redirect=` whose target has no TXT records at all, or does not exist, counts as one, beside its Critical error. A target with TXT records but no SPF does not.
 - `records` — every SPF record at the name, when there is more than one.
 - `ignored` — on parts of the include tree that receivers never evaluate.
+- `spfDnsConflict` — true when the name has a CNAME next to its own TXT records. DNS does not allow that, but some DNS hosts serve it, and receivers then differ: some read the TXT at the name (Gmail and Yahoo among them), others follow the CNAME (Mail.ru and most Microsoft servers). The finding is a `dns_record_found` error with fix `dns_fix_cname_txt_conflict`, found by asking the zone's name servers directly.
+  - **Critical** when the two sides publish different SPF records: a sender authorised by only one of them fails SPF at the receivers that read the other.
+  - **Warning** when both sides publish the same SPF records, or neither has one.
+  - `record`, `evaluation` and the counts are for the side this check's resolver returned, so `evaluation` can stay `ok`. The error's text names both records. Keep either the CNAME or the TXT records at the name.
 
 An `include:` or `redirect=` whose target is built from sender macros (Proofpoint's `include:%{ir}.%{v}.%{d}.spf.has.pphosted.com`, Valimail's `%{i}…`) counts as one DNS lookup itself; the target is a record of its own for each sending IP, and its terms count in neither `lookupCount` nor `voidLookups`. For a sender the record does not list, an Info error says when that target takes it over the 10-lookup or 2-void-lookup limit, and a Critical error with permerror when the target does not exist for it.
 
-A result other than `ok` also gets a one-line verdict ahead of the details.
+A result other than `ok` also gets a one-line verdict ahead of the details. So does a CNAME conflict, which `evaluation: ok` would otherwise hide.
 
 ---
 
@@ -642,7 +677,11 @@ When a call times out, its outcome is unknown. Check `decisions` in `get_enforce
 | `excludeFromHealth` | On SPF/DKIM records: the record was suppressed in the app. It is still listed with its own health and errors, but it does not feed the domain's severity — so a Critical record under a Healthy domain is expected, not a contradiction. |
 | `missingReturnPaths` | ESPs sending with their own Return-Path instead of your domain — causes SPF alignment failure. Fix: configure a Custom Return-Path at the ESP. |
 | `evaluation` / `permErrorScope` | On SPF records, live and stored: what receivers' SPF check returns, `ok`, `none`, `permerror` or `temperror`. `permErrorScope` `record` means receivers that follow RFC 7208 do not evaluate it as one record: a syntax error fails SPF for every message, several SPF records give results that differ by receiver. `evaluation` means it breaks partway, and senders matched before that point still pass. |
+| `spfDnsConflict` | In `dns_check_spf`: the name has a CNAME next to its own TXT records, so receivers can read different SPF records for it. Critical when the two sides differ, a Warning when they do not. |
 | `ready` / `nextStep` / `nextRecord` | In `get_enforcement_status`: whether the domain can take its next step now, the policy that step reaches (the current one when the step takes `pct` off), and the record to publish for it. |
+| `failedRule` / `holdsBy` | In `get_enforcement_status`, on a source that needs DKIM: the rule it fails by (`window_share`, `day_share`, `unsigned_count`) and, on a blocker, why that holds the step (`share`, `volume`). The plan's own account, which the assistant repeats instead of working it out from the figures. |
+| `thresholds` | In `get_enforcement_status`: the numbers the plan's rules go by. Shares are in percent. |
+| `fix` on a signer or a source / `fixExpect` | In `get_enforcement_status`: what to do about a sender's mail, in the words the DMARKOFF app's plan shows, and what to expect after. Not the `fix` code of a record error. |
 | `readinessPct` | The share of the domain's own mail signed with aligned DKIM over `windowDays` days. It shows progress. The blockers and confirmations decide the verdict. |
 | `verdict` | The readiness plan's call on a source's mail: `aligned` (own mail signed with aligned DKIM), `needs_dkim` (own mail that is not), `relay` (mostly forwarded or gateway mail), `unattributed` (mostly mail nobody has identified, spoofing included), `inactive` (sent in the last 28 days but not in the last 14), `low_volume` (too little own mail to judge). A decision never changes it. |
 | `planRole` | A source's place in the readiness plan: `blocker` holds the next step, `confirmation` is an unattributed source you have to call not yours, `excluded` looks like your own mail but you took it out. Null when the step does not depend on the source. |
