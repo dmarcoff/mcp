@@ -210,13 +210,13 @@ I published the record for example.com. Will its reports reach my project?
 | `get_policy_overrides` | Why receivers did not enforce your policy: ARC, forwarding, sampling, local rules |
 | `get_smtp_rejections` | Mail throttled or rejected at SMTP time, by reason — Gmail's 421/550 codes explained |
 | `get_spf_usage` | Which SPF mechanisms actually carry mail, and which senders your record misses — for lookup-limit clean-ups |
-| `get_enforcement_status` | DMARKOFF's readiness plan for a domain: whether it can move to quarantine or reject (or first take `pct` off), what holds it, which sources to confirm, and the record to publish |
+| `get_enforcement_status` | DMARKOFF's readiness plan for a domain: whether it can move to quarantine or reject (or first take `pct` off), what holds it and by which rule, what to do about each sender that needs DKIM, which sources to confirm, and the record to publish |
 
 **Live DNS** (API key, but no monitored project)
 
 | Tool | What it does |
 |------|-------------|
-| `dns_check_spf` | Current SPF record, what receivers evaluate it to (`ok`, `permerror` and so on), parsed include tree and lookup count |
+| `dns_check_spf` | Current SPF record, what receivers evaluate it to (`ok`, `permerror` and so on), parsed include tree and lookup count. Flags a CNAME next to the name's own TXT records |
 | `dns_check_dmarc` | Current DMARC policy from DNS. With a project, whether the record sends reports to it |
 | `dns_check_dkim` | DKIM public key for a given selector |
 | `dns_check_txt` | All TXT records with type classification — including `spf-ignored`, a record that looks like SPF but receivers do not read |

@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-11-14
+
+### Added
+- `get_enforcement_status` says what to do about a sender that needs DKIM. A signer in `signedBy` carries `fix`: `text` is the advice, in the words the DMARKOFF app's plan shows; `records` lists the DNS names to publish or check, with the `domain` and `selector` that `dns_check_dkim` takes; `service` is a short hint for the sending service: where the setup is, a common pitfall and a link to its documentation. `fix` is on the largest signer, and on the second when it is of another kind and has at least a third of the largest's mail. `fixExpect` on the plan says what to expect after the fix: the plan stops listing the source within 14 days, or 28 for a step to `reject` and at `reject`.
+- `fix` on each source in `info.spfNotAligned`, the own senders that pass DMARC by DKIM while SPF does not align. Where the provider offers a Return-Path on your own domain, `text` says to set one up, `service` gives a hint for the providers DMARKOFF has one for, and `expect` says what follows. Where it does not, `text` says that nothing needs doing.
+- `failedRule` and `holdsBy` on a `needs_dkim` blocker of `get_enforcement_status`: the plan's own account of why the source is there. `failedRule` is the rule the source fails by: `window_share` (too little of its mail is signed over the window), `day_share` (the window passes, a single day does not) or `unsigned_count` (too few messages to judge by a share, and some of them are unsigned). `holdsBy` is why that holds the step: `share` (the source carries enough of the domain's own mail) or `volume` (it carries less, but enough messages, part of which fails DMARC). The recommendations in `info.spfOnly` and `info.smallNotAligned` carry `failedRule`.
+- `thresholds` on the plan: the numbers those rules go by. They are the two windows in days, the share of aligned DKIM a source needs over a window and on a single day, the message counts that decide which rule applies, the share of own mail from which a source holds the step, and the days of reports and at the policy each step asks for. The tool tells the assistant to quote them instead of numbers of its own. A plan evaluated before rules version 10 (`version` under 10) has neither `thresholds` nor `failedRule` and `holdsBy`.
+- `spfDnsConflict` in `dns_check_spf`: the name has a CNAME next to its own TXT records. DNS does not allow that, but some DNS hosts serve it, and receivers then differ in which side they read. When the two sides publish different SPF records the finding is Critical: a sender authorised by only one of them fails SPF at the receivers that read the other. The one-line verdict names the conflict, since `evaluation` can stay `ok`.
+
+### Changed
+- `voidLookups` in `dns_check_spf` counts an `include:` or `redirect=` whose target has no TXT records at all, or does not exist.
+- `get_spf_usage` says in its header when the return path has a CNAME next to its own TXT records and the two sides publish different SPF records. The traffic is laid onto the record this check's resolver returned, which only the receivers on that side check.
+
+---
+
 ## 2026-10-31
 
 ### Added
